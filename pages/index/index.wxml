@@ -1,0 +1,43 @@
+<!--index.wxml-->
+<navigation-bar title="博爱星火" back="{{false}}" color="black" background="#FFF"></navigation-bar>
+<scroll-view class="scrollarea" scroll-y type="list">
+  <view class="container">
+    <view class="welcome-section">
+      <text class="welcome-title">欢迎参与调查问卷</text>
+      <text class="welcome-desc">您的意见对我们很重要，请花几分钟时间完成问卷</text>
+    </view>
+    
+    <view class="survey-card">
+      <view class="card-header">
+        <text class="card-title">用户体验调查</text>
+        <text class="card-badge">约3分钟</text>
+      </view>
+      <text class="card-desc">帮助我们了解您的需求和偏好，提供更好的服务体验</text>
+      <view class="card-features">
+        <view class="feature-item">
+          <text class="feature-icon">📝</text>
+          <text class="feature-text">4道简单问题</text>
+        </view>
+        <view class="feature-item">
+          <text class="feature-icon">🎁</text>
+          <text class="feature-text">匿名参与</text>
+        </view>
+        <view class="feature-item">
+          <text class="feature-icon">⚡</text>
+          <text class="feature-text">快速完成</text>
+        </view>
+      </view>
+      <button class="start-survey-btn" bindtap="startSurvey">开始问卷</button>
+    </view>
+    
+    <view class="info-section">
+      <text class="info-title">问卷说明</text>
+      <view class="info-list">
+        <text class="info-item">• 本问卷采用匿名形式，请放心填写</text>
+        <text class="info-item">• 所有题目均为必填项</text>
+        <text class="info-item">• 完成后可查看您的回答结果</text>
+        <text class="info-item">• 数据仅用于改善服务质量</text>
+      </view>
+    </view>
+  </view>
+</scroll-view>

@@ -1,0 +1,73 @@
+<!--survey.wxml-->
+<view class="page-wrapper">
+  <navigation-bar title="调查问卷" back="{{true}}" color="black" background="#FFF"></navigation-bar>
+  <scroll-view class="scrollarea" scroll-y type="list">
+  <view class="container">
+      <view class="questions-container">
+      <view class="question-item" wx:for="{{questions}}" wx:key="id">
+        <view class="question-title">
+          <text class="question-number">{{index + 1}}.</text>
+          <text class="question-text">{{item.title}}</text>
+          <text class="required-mark" wx:if="{{item.type !== 'text'}}">*</text>
+        </view>
+
+        <!-- 单选题 -->
+        <view class="options-container" wx:if="{{item.type === 'single'}}">
+          <view class="option-item" 
+                wx:for="{{item.options}}" 
+                wx:for-item="option" 
+                wx:for-index="optionIndex"
+                wx:key="optionIndex"
+                data-question-id="{{item.id}}"
+                data-option-index="{{optionIndex}}"
+                bindtap="onSingleSelect">
+            <view class="radio-wrapper">
+              <view class="radio {{answers[item.id] === optionIndex ? 'radio-checked' : ''}}"></view>
+              <text class="option-text">{{option}}</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- 多选题 -->
+        <view class="options-container" wx:if="{{item.type === 'multiple'}}">
+          <view class="option-item" 
+                wx:for="{{item.options}}" 
+                wx:for-item="option" 
+                wx:for-index="optionIndex"
+                wx:key="optionIndex"
+                data-question-id="{{item.id}}"
+                data-option-index="{{optionIndex}}"
+                bindtap="onMultipleSelect">
+            <view class="checkbox-wrapper">
+              <view class="checkbox {{answers[item.id] && answers[item.id][optionIndex] ? 'checkbox-checked' : ''}}"></view>
+              <text class="option-text">{{option}}</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- 文本输入题 -->
+        <view class="text-input-container" wx:if="{{item.type === 'text'}}">
+          <textarea class="text-input"
+                    placeholder="{{item.placeholder}}"
+                    value="{{answers[item.id]}}"
+                    data-question-id="{{item.id}}"
+                    bindinput="onTextInput"
+                    maxlength="200"
+                    show-confirm-bar="{{false}}"
+                    auto-height></textarea>
+        </view>
+      </view>
+    </view>
+
+
+  </view>
+  </scroll-view>
+
+  <!-- 固定底部提交按钮 -->
+  <view class="fixed-bottom-container">
+  <view class="remaining-info">
+    <text class="remaining-text">剩余 {{remainingQuestions}} 题</text>
+  </view>
+    <button class="fixed-submit-btn" bindtap="submitSurvey">提交问卷</button>
+  </view>
+</view>

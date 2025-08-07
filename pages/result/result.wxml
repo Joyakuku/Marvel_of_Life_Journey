@@ -1,0 +1,50 @@
+<!--result.wxml-->
+<navigation-bar title="问卷结果" back="{{true}}" color="black" background="#FFF"></navigation-bar>
+<scroll-view class="scrollarea" scroll-y type="list">
+  <view class="container">
+    <!-- 结果头部 -->
+    <view class="result-header">
+      <view class="success-icon">
+        <text class="icon-check">✓</text>
+      </view>
+      <text class="success-title">问卷提交成功</text>
+      <text class="submit-time">提交时间：{{submitTime}}</text>
+    </view>
+
+    <!-- AI解析容器 -->
+    <view class="ai-analysis-container">
+      <view class="ai-analysis-box">
+        <view class="ai-analysis-header">
+          <text class="ai-title">🤖 AI智能解析</text>
+        </view>
+        <view class="ai-analysis-content">
+          <!-- 这里是AI解析结果的占位区域 -->
+          <view class="ai-placeholder">
+            <text class="placeholder-text">AI解析功能即将上线，敬请期待...</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 操作按钮 -->
+    <view class="action-buttons">
+      <button class="action-btn secondary-btn" bindtap="retakeSurvey">
+        <text class="btn-icon">↻</text>
+        <text class="btn-text">重新填写</text>
+      </button>
+      
+      <button class="action-btn primary-btn" bindtap="shareResult">
+        <text class="btn-icon">⤴</text>
+        <text class="btn-text">分享结果</text>
+      </button>
+    </view>
+
+
+
+    <!-- 感谢信息 -->
+    <view class="thank-you">
+      <text class="thank-text">再次感谢您的宝贵意见！</text>
+      <text class="thank-desc">您的反馈将帮助我们提供更好的服务</text>
+    </view>
+  </view>
+</scroll-view>
