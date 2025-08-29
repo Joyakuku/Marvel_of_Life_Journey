@@ -1,35 +1,36 @@
 // survey.js
+// 引入日志模块（置于顶部，避免在使用前未定义）
+const logger = require('../../utils/logger.js')
+// 统一题库模块：集中管理题目、计分与解析
+const questionsRepo = require('../../utils/questions.js')
+
 Page({
   data: {
-    questions: [
-      {
-        id: 1,
-        type: 'single',
-        title: '您的年龄段是？',
-        options: ['18-25岁', '26-35岁', '36-45岁', '46岁以上']
-      },
-      {
-        id: 2,
-        type: 'single',
-        title: '您的职业是？',
-        options: ['学生', '上班族', '自由职业者', '退休人员', '其他']
-      },
-      {
-        id: 3,
-        type: 'multiple',
-        title: '您平时喜欢的休闲活动有哪些？（多选）',
-        options: ['看电影', '运动健身', '阅读', '旅游', '游戏', '音乐']
-      },
-      {
-        id: 4,
-        type: 'single',
-        title: '您对我们的服务是否满意？',
-        options: ['非常满意', '满意', '一般', '不满意']
-      }
-    ],
+    // 改为从题库模块拉取题目，避免重复定义带来的不一致风险
+    questions: [],
     answers: {},
     currentStep: 0,
-    remainingQuestions: 4
+    remainingQuestions: 0,
+    // 防重复提交标记，避免多次点击导致重复跳转
+    isSubmitting: false
+  },
+
+  /**
+   * 根据题目类型初始化答案结构
+   * - 单选：存储选项key字符串
+   * - 多选：存储选项key的映射对象
+   * - 文本：存储字符串
+   */
+  initAnswersByQuestions(questions) {
+    const answers = {}
+    questions.forEach(q => {
+      if (q.type === 'multiple') {
+        answers[q.id] = {}
+      } else {
+        answers[q.id] = ''
+      }
+    })
+    return answers
   },
 
   // 计算剩余题目数
@@ -47,6 +48,7 @@ Page({
           completed++
         }
       } else {
+        // 单选题：选项使用字母 key 存储，非空即作答
         if (answers[question.id] !== '' && answers[question.id] !== undefined) {
           completed++
         }
@@ -55,64 +57,87 @@ Page({
     
     const remaining = questions.length - completed
     this.setData({ remainingQuestions: remaining })
+    // 调试日志：剩余题目数
+    logger.debug('Survey', '剩余题目数更新', { remaining })
   },
 
-
-
   onLoad: function() {
-    // 初始化答案对象
-    const answers = {}
-    this.data.questions.forEach(q => {
-      if (q.type === 'multiple') {
-        answers[q.id] = {}
-      } else {
-        answers[q.id] = ''
-      }
+    // 页面生命周期日志
+    logger.logPageLifecycle('Survey', 'onLoad')
+
+    // 从题库拉取18题，并初始化答案
+    const questions = questionsRepo.getAllQuestions()
+    const answers = this.initAnswersByQuestions(questions)
+
+    this.setData({ 
+      questions, 
+      answers, 
+      remainingQuestions: questions.length 
     })
-    this.setData({ answers })
+
+    // 初始化后立即计算，保证 UI 显示正确
+    this.calculateRemainingQuestions()
+    logger.info('Survey', '题库加载完成', { count: questions.length })
   },
 
   // 单选题选择
   onSingleSelect: function(e) {
-    const { questionId, optionIndex } = e.currentTarget.dataset
-    const answers = { ...this.data.answers }
-    answers[questionId] = optionIndex
+    // 使用 optionKey 存储，便于后续计分规则按选项标识映射
+    const { questionId, optionKey } = e.currentTarget.dataset
+    // 注意：避免使用对象展开（...）以规避 Babel runtime 依赖（defineProperty）
+    // 这里用 Object.assign 创建浅拷贝，兼容小程序编译环境
+    const answers = Object.assign({}, this.data.answers)
+    answers[questionId] = optionKey
     this.setData({ answers })
     this.calculateRemainingQuestions()
+    // 行为日志：单选
+    logger.debug('Survey', '单选', { questionId, optionKey })
   },
 
   // 多选题选择
   onMultipleSelect: function(e) {
-    const { questionId, optionIndex } = e.currentTarget.dataset
-    const answers = { ...this.data.answers }
-    const currentAnswers = { ...answers[questionId] } || {}
+    const { questionId, optionKey } = e.currentTarget.dataset
+    // 统一使用 Object.assign 避免对象展开触发 Babel helper 注入
+    const answers = Object.assign({}, this.data.answers)
+    const currentAnswers = Object.assign({}, answers[questionId] || {})
     
-    // 使用对象存储选中状态
-    if (currentAnswers[optionIndex]) {
+    // 使用对象存储选中状态（key 为选项标识）
+    if (currentAnswers[optionKey]) {
       // 取消选择
-      delete currentAnswers[optionIndex]
+      delete currentAnswers[optionKey]
     } else {
       // 选择
-      currentAnswers[optionIndex] = true
+      currentAnswers[optionKey] = true
     }
     
     answers[questionId] = currentAnswers
     this.setData({ answers })
     this.calculateRemainingQuestions()
+    // 行为日志：多选切换
+    logger.debug('Survey', '多选切换', { questionId, optionKey, checked: !!currentAnswers[optionKey] })
   },
 
   // 文本输入
   onTextInput: function(e) {
     const { questionId } = e.currentTarget.dataset
     const value = e.detail.value
-    const answers = { ...this.data.answers }
+    // 避免对象展开，改用 Object.assign
+    const answers = Object.assign({}, this.data.answers)
     answers[questionId] = value
     this.setData({ answers })
     this.calculateRemainingQuestions()
+    // 行为日志：文本输入长度
+    logger.debug('Survey', '文本输入', { questionId, length: (value || '').length })
   },
 
   // 提交问卷
   submitSurvey: function() {
+    // 若正在提交，直接忽略，防止重复触发
+    if (this.data.isSubmitting) {
+      logger.warn('Survey', '重复提交阻止')
+      return
+    }
+
     // 验证是否所有必填题都已回答
     const { questions, answers } = this.data
     let isValid = true
@@ -141,22 +166,27 @@ Page({
         title: '请完成所有题目',
         icon: 'none'
       })
+      // 校验失败日志
+      logger.warn('Survey', '提交校验失败')
       return
     }
 
+    // 进入提交中状态，防止重复点击
+    this.setData({ isSubmitting: true })
+
     // 保存答案到本地存储
     wx.setStorageSync('surveyAnswers', answers)
-    
-    wx.showToast({
-      title: '提交成功',
-      icon: 'success'
-    })
 
-    // 跳转到结果页面
-    setTimeout(() => {
-      wx.navigateTo({
-        url: '/pages/result/result'
-      })
-    }, 1500)
+    // 视觉提醒：显示成功 Toast，但不等待其结束，立即跳转
+    wx.showToast({ title: '提交成功', icon: 'success', duration: 1200 })
+    logger.info('Survey', '提交成功，立即跳转结果页', { answered: Object.keys(answers).length })
+
+    // 立即跳转到结果页（不设置延迟）
+    try {
+      wx.navigateTo({ url: '/pages/result/result' })
+    } finally {
+      // 页面将很快被销毁，这里重置仅作为防御
+      this.setData({ isSubmitting: false })
+    }
   }
 })

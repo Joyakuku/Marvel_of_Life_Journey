@@ -17,13 +17,13 @@
                 wx:for="{{item.options}}" 
                 wx:for-item="option" 
                 wx:for-index="optionIndex"
-                wx:key="optionIndex"
+                wx:key="key"
                 data-question-id="{{item.id}}"
-                data-option-index="{{optionIndex}}"
+                data-option-key="{{option.key}}"
                 bindtap="onSingleSelect">
             <view class="radio-wrapper">
-              <view class="radio {{answers[item.id] === optionIndex ? 'radio-checked' : ''}}"></view>
-              <text class="option-text">{{option}}</text>
+              <view class="radio {{answers[item.id] === option.key ? 'radio-checked' : ''}}"></view>
+              <text class="option-text">{{option.key}}. {{option.text}}</text>
             </view>
           </view>
         </view>
@@ -34,13 +34,13 @@
                 wx:for="{{item.options}}" 
                 wx:for-item="option" 
                 wx:for-index="optionIndex"
-                wx:key="optionIndex"
+                wx:key="key"
                 data-question-id="{{item.id}}"
-                data-option-index="{{optionIndex}}"
+                data-option-key="{{option.key}}"
                 bindtap="onMultipleSelect">
             <view class="checkbox-wrapper">
-              <view class="checkbox {{answers[item.id] && answers[item.id][optionIndex] ? 'checkbox-checked' : ''}}"></view>
-              <text class="option-text">{{option}}</text>
+              <view class="checkbox {{answers[item.id] && answers[item.id][option.key] ? 'checkbox-checked' : ''}}"></view>
+              <text class="option-text">{{option.key}}. {{option.text}}</text>
             </view>
           </view>
         </view>

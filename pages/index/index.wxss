@@ -6,15 +6,15 @@
 
 .container {
   padding: 20rpx;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #ffffff;
   min-height: 100vh;
 }
 
 /* 欢迎区域 */
 .welcome-section {
   text-align: center;
-  padding: 60rpx 30rpx 40rpx;
-  color: white;
+  padding: 60rpx 30rpx 0;
+  color: #000000;
 }
 
 .welcome-title {
@@ -22,23 +22,22 @@
   font-size: 48rpx;
   font-weight: bold;
   margin-bottom: 20rpx;
-  text-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.2);
 }
 
 .welcome-desc {
   display: block;
   font-size: 28rpx;
-  opacity: 0.9;
+  opacity: 0.7;
   line-height: 1.5;
 }
 
 /* 问卷卡片 */
 .survey-card {
-  background: white;
+  background: #ffffff;
   padding: 40rpx 30rpx;
-  border-radius: 24rpx;
+  border-radius: 16rpx;
   margin-bottom: 30rpx;
-  box-shadow: 0 12rpx 40rpx rgba(0, 0, 0, 0.15);
+  border: 1px solid #e0e0e0;
 }
 
 .card-header {
@@ -51,12 +50,12 @@
 .card-title {
   font-size: 36rpx;
   font-weight: bold;
-  color: #333;
+  color: #000000;
 }
 
 .card-badge {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: #000000;
+  color: #ffffff;
   padding: 8rpx 16rpx;
   border-radius: 20rpx;
   font-size: 22rpx;
@@ -65,7 +64,7 @@
 .card-desc {
   display: block;
   font-size: 28rpx;
-  color: #666;
+  color: #333333;
   line-height: 1.5;
   margin-bottom: 30rpx;
 }
@@ -90,55 +89,61 @@
 
 .feature-text {
   font-size: 24rpx;
-  color: #666;
+  color: #333333;
   text-align: center;
 }
 
 .start-survey-btn {
   width: 100%;
   height: 88rpx;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: #000000;
+  color: #ffffff;
   font-size: 32rpx;
   font-weight: bold;
   border-radius: 44rpx;
   border: none;
-  box-shadow: 0 8rpx 24rpx rgba(102, 126, 234, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .start-survey-btn:active {
-  transform: translateY(2rpx);
-  box-shadow: 0 4rpx 12rpx rgba(102, 126, 234, 0.3);
+  background: #333333;
 }
 
 /* 说明区域 */
 .info-section {
-  background: rgba(255, 255, 255, 0.9);
-  padding: 30rpx;
-  border-radius: 20rpx;
-  backdrop-filter: blur(10rpx);
+  margin-top: 40rpx;
+  padding: 0 20rpx;
+}
+
+.info-text {
+  display: block;
+  font-size: 28rpx;
+  color: #333333;
+  line-height: 1.8;
+  text-align: justify;
+  text-indent: 2em;
 }
 
 .info-title {
   display: block;
   font-size: 32rpx;
   font-weight: bold;
-  color: #333;
+  color: #000000;
   margin-bottom: 24rpx;
 }
 
 .info-list {
-  display: flex;
+  display: inline-flex;
   flex-direction: column;
   gap: 16rpx;
+  text-align: left;
 }
 
 .info-item {
   font-size: 26rpx;
-  color: #666;
+  color: #333333;
   line-height: 1.5;
 }
 page {

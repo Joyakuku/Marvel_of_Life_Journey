@@ -1,18 +1,40 @@
 <!--result.wxml-->
 <navigation-bar title="问卷结果" back="{{true}}" color="black" background="#FFF"></navigation-bar>
-<scroll-view class="scrollarea" scroll-y type="list">
-  <view class="container">
-    <!-- 结果头部 -->
-    <view class="result-header">
-      <view class="success-icon">
-        <text class="icon-check">✓</text>
-      </view>
-      <text class="success-title">问卷提交成功</text>
-      <text class="submit-time">提交时间：{{submitTime}}</text>
-    </view>
 
-    <!-- AI解析容器 -->
-    <view class="ai-analysis-container">
+<!-- 固定在导航栏下方的顶部固定区：包含模式切换 + 总分概览 -->
+<view id="fixedTopContainer" class="page-fixed-top" style="top: {{navHeightPx}}px;">
+  <!-- 模式切换 -->
+  <view class="mode-switch" aria-label="展示模式切换">
+    <view class="switch-btn {{showMode==='explain' ? 'active' : ''}}" role="button" aria-pressed="{{showMode==='explain'}}" data-mode="explain" bindtap="switchMode">题目解释</view>
+    <view class="switch-btn {{showMode==='ai' ? 'active' : ''}}" role="button" aria-pressed="{{showMode==='ai'}}" data-mode="ai" bindtap="switchMode">AI智能解析</view>
+  </view>
+  <!-- 总分概览（固定，改为两列布局） -->
+  <view class="score-summary fixed two-col" aria-label="评估摘要">
+    <view class="summary-col left">
+      <view class="score-box">
+        <text class="score">{{totalScore}}</text>
+        <text class="slash">/</text>
+        <text class="max-score">{{maxScore}}</text>
+      </view>
+      <text class="level-text">评估等级：{{level}}</text>
+    </view>
+    <view class="summary-col right">
+      
+      <text class="level-desc">{{levelDescription}}</text>
+    </view>
+  </view>
+</view>
+
+<scroll-view class="scrollarea" scroll-y type="list">
+  <view class="container" style="margin-top: {{switchSpacerRpx}}rpx;">
+
+    <!-- 顶部占位：已改为通过容器 margin-top 动态顶开固定区，避免被遮挡 -->
+    <!-- 原占位保留说明：若需回退可恢复以下视图 -->
+    <!-- <view class="switch-spacer" style="height: {{switchSpacerRpx}}rpx;"></view> -->
+
+    <!-- 总分概览已移动至顶部固定区 -->
+    <!-- AI解析容器（原有占位） -->
+    <view class="ai-analysis-container" wx:if="{{showMode==='ai'}}">
       <view class="ai-analysis-box">
         <view class="ai-analysis-header">
           <text class="ai-title">🤖 AI智能解析</text>
@@ -26,7 +48,22 @@
       </view>
     </view>
 
-    <!-- 操作按钮 -->
+    <!-- 结果列表：展示题目、答案与解析（不展示每题得分） -->
+    <view class="result-list" wx:if="{{showMode==='explain'}}">
+      <block wx:for="{{resultData}}" wx:key="qid">
+        <view class="result-item">
+          <text class="q-title">{{index + 1}}. {{item.question}}</text>
+          <text class="q-answer">{{item.answer}}</text>
+          <!-- 题目解释仅在 explain 模式展示 -->
+          <view class="q-explanation" wx:if="{{showMode==='explain'}}">
+            <text class="label">解析：</text>
+            <text class="content">{{item.explanation}}</text>
+          </view>
+        </view>
+      </block>
+    </view>
+
+    <!-- 操作按钮（原有保留） -->
     <view class="action-buttons">
       <button class="action-btn secondary-btn" bindtap="retakeSurvey">
         <text class="btn-icon">↻</text>
@@ -39,9 +76,7 @@
       </button>
     </view>
 
-
-
-    <!-- 感谢信息 -->
+    <!-- 感谢信息（原有保留） -->
     <view class="thank-you">
       <text class="thank-text">再次感谢您的宝贵意见！</text>
       <text class="thank-desc">您的反馈将帮助我们提供更好的服务</text>
