@@ -1,29 +1,41 @@
-# 微信小程序问卷示例项目
+# 问卷调查Web应用
 
 ## 项目简介
-本项目为一个简易的问卷小程序，包含首页、问卷填写页与结果页，演示了题目选择、数据存储与结果展示等流程。
+本项目为一个简易的问卷调查Web应用，包含首页、问卷填写页与结果页，演示了题目选择、数据存储与结果展示等流程。原项目是基于微信小程序开发的，现已转换为纯Web应用。
 
 ## 技术栈
-- 小程序原生框架（不依赖第三方库）
-- WXML/WXSS/JS
+- HTML5/CSS3/JavaScript
+- 不依赖第三方框架库
 
 ## 目录结构
-- app.js / app.json / app.wxss：全局入口与配置
-- pages/index：首页，进入问卷
-- pages/survey：问卷填写逻辑
-- pages/result：结果展示与操作
-- components/navigation-bar：自定义导航栏
-- utils/logger.js：项目内置日志模块
+- index.html：首页，进入问卷
+- survey.html：问卷填写逻辑
+- result.html：结果展示与操作
+- css/：样式文件目录
+  - style.css：全局样式
+  - index.css：首页样式
+  - survey.css：问卷页样式
+  - result.css：结果页样式
+  - navigation.css：导航栏样式
+- js/：JavaScript文件目录
+  - app.js：全局脚本
+  - index.js：首页脚本
+  - survey.js：问卷页脚本
+  - result.js：结果页脚本
+  - navigation.js：导航栏组件脚本
+- utils/：工具模块目录
+  - logger.js：项目内置日志模块
+  - questions.js：问题库和评分规则
+  - storage.js：本地存储工具
 
 ## 主要功能与数据流
 1. 用户在问卷页完成单选、多选、文本输入等题目。
-2. 提交后将答案写入本地存储（key：`surveyAnswers`）。
+2. 提交后将答案写入本地存储（localStorage，key：`surveyAnswers`）。
 3. 结果页从本地读取答案，进行格式化处理并展示。
 
 ## 开发与运行
-1. 在微信开发者工具中打开本项目目录 `WX_prj`。
-2. 使用对应的 AppID（或体验版 AppID）运行与预览。
-3. 代码热重载：保存文件后，开发者工具会自动刷新。
+1. 直接在浏览器中打开index.html即可运行应用。
+2. 也可以使用任何Web服务器（如Live Server）来提供更好的开发体验。
 
 ## 代码规范
 - 所有新增代码均包含中文注释，聚焦“为什么/怎么做”。
@@ -32,8 +44,8 @@
 ## 日志记录说明（utils/logger.js）
 - 支持级别：`error` < `warn` < `info` < `debug`。
 - 默认级别为 `info`，可通过本地存储切换：
-  - 在控制台执行：`wx.setStorageSync('logLevel', 'debug')`。
-  - 重启小程序后生效。
+  - 在控制台执行：`localStorage.setItem('logLevel', 'debug')`。
+  - 刷新页面后生效。
 - 使用方式：
   - 引入：`const logger = require('路径/utils/logger.js')`
   - 示例：

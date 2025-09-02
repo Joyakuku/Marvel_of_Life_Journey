@@ -1,6 +1,6 @@
 /**
- * 简易小程序日志模块
- * - 无第三方依赖，体积小，适合小程序环境
+ * 简易Web应用日志模块
+ * - 无第三方依赖，体积小
  * - 提供日志级别、时间戳、Tag（模块名/页面名）
  * - 提供页面生命周期与异常捕获辅助方法
  * @module utils/logger
@@ -9,6 +9,20 @@
 // 日志级别定义（数字越大越详细）
 const LEVELS = { error: 0, warn: 1, info: 2, debug: 3 }
 let currentLevel = LEVELS.info
+
+// 初始化：从本地存储读取日志级别
+function initialize() {
+  try {
+    const level = localStorage.getItem('logLevel') || 'info'
+    setLevel(level)
+    console.log(`[Logger] 日志级别已设置为: ${level}`)
+  } catch (e) {
+    console.warn('[Logger] 读取日志级别失败，使用默认级别', e)
+  }
+}
+
+// 自动初始化
+initialize()
 
 /**
  * 设置日志级别
@@ -64,7 +78,8 @@ function baseLog(level, tag, ...args) {
   }
 }
 
-module.exports = {
+// 创建日志对象
+const logger = {
   /** 切换日志级别 */
   setLevel,
   /** 获取当前日志级别 */
@@ -95,3 +110,6 @@ module.exports = {
     baseLog('error', pageName, '异常捕获', error, extra || {})
   }
 }
+
+// 将日志对象挂载到全局window对象
+window.logger = logger;

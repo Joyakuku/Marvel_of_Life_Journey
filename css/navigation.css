@@ -1,0 +1,50 @@
+/**
+ * 导航栏样式文件
+ * 替代微信小程序的navigation-bar组件
+ */
+
+.navigation-bar {
+  --height: 44px;
+  --left: 16px;
+  overflow: hidden;
+  color: rgba(0, 0, 0, 0.9);
+  flex: none;
+}
+
+.navigation-bar__inner {
+  position: relative;
+  top: 0;
+  left: 0;
+  height: var(--height);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.navigation-bar__left {
+  position: relative;
+  padding-left: var(--left);
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+
+
+.navigation-bar__center {
+  font-size: 17px;
+  text-align: center;
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  flex: 1;
+  height: 100%;
+}

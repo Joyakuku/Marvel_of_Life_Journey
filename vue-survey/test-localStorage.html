@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>localStorage持久化测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .result {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>localStorage持久化功能测试</h1>
+    
+    <div class="test-section">
+        <h3>测试步骤：</h3>
+        <ol>
+            <li>点击"保存测试数据"按钮</li>
+            <li>刷新页面</li>
+            <li>点击"读取测试数据"按钮</li>
+            <li>检查数据是否正确恢复</li>
+        </ol>
+    </div>
+    
+    <div class="test-section">
+        <h3>测试操作：</h3>
+        <button onclick="saveTestData()">保存测试数据</button>
+        <button onclick="loadTestData()">读取测试数据</button>
+        <button onclick="clearTestData()">清除测试数据</button>
+        <button onclick="checkSurveyData()">检查问卷数据</button>
+    </div>
+    
+    <div class="test-section">
+        <h3>测试结果：</h3>
+        <div id="result" class="result">点击按钮开始测试...</div>
+    </div>
+    
+    <div class="test-section">
+        <h3>问卷应用测试：</h3>
+        <p>1. 打开问卷应用：<a href="http://localhost:5173" target="_blank">http://localhost:5173</a></p>
+        <p>2. 填写手机号，开始问卷</p>
+        <p>3. 选择几个答案</p>
+        <p>4. 刷新页面</p>
+        <p>5. 检查是否保持在当前题目位置，答案是否保留</p>
+    </div>
+
+    <script>
+        function saveTestData() {
+            const testData = {
+                answers: { 'q1': 'A', 'q2': 'B', 'q3': 'C' },
+                currentQuestionIndex: 2,
+                userPhone: '13800138000',
+                startTime: Date.now(),
+                isSubmitted: false,
+                surveyResult: null
+            };
+            
+            try {
+                localStorage.setItem('survey-state', JSON.stringify(testData));
+                document.getElementById('result').textContent = '测试数据已保存到localStorage\n' + JSON.stringify(testData, null, 2);
+            } catch (error) {
+                document.getElementById('result').textContent = '保存失败: ' + error.message;
+            }
+        }
+        
+        function loadTestData() {
+            try {
+                const data = localStorage.getItem('survey-state');
+                if (data) {
+                    const parsed = JSON.parse(data);
+                    document.getElementById('result').textContent = '从localStorage读取的数据:\n' + JSON.stringify(parsed, null, 2);
+                } else {
+                    document.getElementById('result').textContent = 'localStorage中没有找到survey-state数据';
+                }
+            } catch (error) {
+                document.getElementById('result').textContent = '读取失败: ' + error.message;
+            }
+        }
+        
+        function clearTestData() {
+            try {
+                localStorage.removeItem('survey-state');
+                document.getElementById('result').textContent = '测试数据已清除';
+            } catch (error) {
+                document.getElementById('result').textContent = '清除失败: ' + error.message;
+            }
+        }
+        
+        function checkSurveyData() {
+            try {
+                const data = localStorage.getItem('survey-state');
+                if (data) {
+                    const parsed = JSON.parse(data);
+                    let result = '问卷数据检查结果:\n\n';
+                    result += `手机号: ${parsed.userPhone || '未设置'}\n`;
+                    result += `当前题目索引: ${parsed.currentQuestionIndex || 0}\n`;
+                    result += `已回答题目数: ${parsed.answers ? Object.keys(parsed.answers).length : 0}\n`;
+                    result += `是否已提交: ${parsed.isSubmitted ? '是' : '否'}\n`;
+                    result += `开始时间: ${parsed.startTime ? new Date(parsed.startTime).toLocaleString() : '未设置'}\n`;
+                    result += `\n完整数据:\n${JSON.stringify(parsed, null, 2)}`;
+                    document.getElementById('result').textContent = result;
+                } else {
+                    document.getElementById('result').textContent = '没有找到问卷数据';
+                }
+            } catch (error) {
+                document.getElementById('result').textContent = '检查失败: ' + error.message;
+            }
+        }
+        
+        // 页面加载时自动检查
+        window.onload = function() {
+            checkSurveyData();
+        };
+    </script>
+</body>
+</html>

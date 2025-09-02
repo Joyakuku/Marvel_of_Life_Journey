@@ -1,6 +1,7 @@
 // questions.js
 // 统一题库管理模块，包含造血干细胞捐献潜力评估的完整题目、计分规则与解析
-const logger = require('./logger.js')
+// 使用全局日志模块
+// 注意：此文件依赖于logger.js先加载
 
 /**
  * 题库常量定义
@@ -430,11 +431,15 @@ function getQuestionsBySection() {
   return sections
 }
 
-module.exports = {
+// 导出模块接口
+const questions = {
   QUESTION_SECTIONS,
   SCORE_LEVELS,
   getAllQuestions,
   getQuestionById,
   calculateScore,
   getQuestionsBySection
-}
+};
+
+// 适配Web环境，将模块挂载到全局window对象
+window.questions = questions;
