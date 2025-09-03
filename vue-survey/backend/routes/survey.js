@@ -61,29 +61,11 @@ router.post('/submit', async (req, res) => {
       endTime
     };
     
-    // 生成AI分析
-    console.log('🤖 正在生成AI分析...');
-    let aiAnalysis = '';
-    try {
-      aiAnalysis = await AIService.generateAnalysis(surveyData, {
-        percentage: surveyData.percentage,
-        section1Score: surveyData.section1Score,
-        section2Score: surveyData.section2Score,
-        section3Score: surveyData.section3Score
-      });
-      console.log('✅ AI分析生成成功');
-    } catch (error) {
-      console.warn('⚠️ AI分析生成失败，使用默认分析:', error.message);
-      aiAnalysis = AIService.getDefaultAnalysis({
-        percentage: surveyData.percentage,
-        section1Score: surveyData.section1Score,
-        section2Score: surveyData.section2Score,
-        section3Score: surveyData.section3Score
-      });
-    }
+    // 注意：不再在提交时生成AI分析，AI分析将在结果页面单独调用
+    console.log('📝 保存问卷基础数据，AI分析将在结果页面生成');
     
-    // 添加AI分析到问卷数据
-    surveyData.aiAnalysis = aiAnalysis;
+    // 设置默认的AI分析字段为空，等待后续更新
+    surveyData.aiAnalysis = '';
     
     // 保存到数据库
     const result = await SurveyResult.create(surveyData);
@@ -95,7 +77,7 @@ router.post('/submit', async (req, res) => {
       message: '问卷提交成功',
       data: {
         id: result.id,
-        aiAnalysis: aiAnalysis
+        message: 'AI分析将在结果页面生成'
       }
     });
     
@@ -363,6 +345,51 @@ router.get('/ai-status', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'AI服务状态检查失败',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * 更新问卷结果的AI分析内容
+ * PUT /api/survey/:id/ai-analysis
+ */
+router.put('/:id/ai-analysis', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { aiAnalysis } = req.body;
+    
+    if (!id || isNaN(id)) {
+      return res.status(400).json({
+        success: false,
+        message: '无效的问卷ID'
+      });
+    }
+    
+    if (typeof aiAnalysis !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'AI分析内容必须是字符串类型'
+      });
+    }
+    
+    console.log('🤖 更新AI分析请求:', { id, aiAnalysisLength: aiAnalysis.length });
+    
+    const result = await SurveyResult.updateAIAnalysis(Number(id), aiAnalysis);
+    
+    res.json({
+      success: true,
+      message: result.message,
+      data: {
+        id: result.id
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ 更新AI分析失败:', error.message);
+    res.status(500).json({
+      success: false,
+      message: '服务器内部错误',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }

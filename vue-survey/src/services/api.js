@@ -191,6 +191,37 @@ export const surveyAPI = {
       console.error('检查AI服务状态失败:', error.message)
       throw error
     }
+  },
+
+  /**
+   * 更新问卷结果的AI分析内容
+   * @param {number} id 问卷结果ID
+   * @param {string} aiAnalysis AI分析内容
+   * @returns {Promise<Object>} 更新结果
+   */
+  async updateAIAnalysis(id, aiAnalysis) {
+    try {
+      console.log('更新AI分析内容:', { id, aiAnalysisLength: aiAnalysis?.length || 0 })
+      
+      if (!id) {
+        throw new Error('问卷ID不能为空')
+      }
+      
+      if (typeof aiAnalysis !== 'string') {
+        throw new Error('AI分析内容必须是字符串类型')
+      }
+      
+      const response = await request(`/api/survey/${id}/ai-analysis`, {
+        method: 'PUT',
+        body: JSON.stringify({ aiAnalysis })
+      })
+      
+      return response
+      
+    } catch (error) {
+      console.error('更新AI分析内容失败:', error.message)
+      throw error
+    }
   }
 }
 

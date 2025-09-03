@@ -243,49 +243,120 @@ export const useSurveyStore = defineStore('survey', () => {
       userPhone: userPhone.value
     })
     
-    // 提交数据到后端数据库
-    try {
-      console.log('开始提交数据到后端数据库...')
-      
-      // 动态导入API服务
-      const { surveyAPI } = await import('@/services/api.js')
-      
-      // 准备提交的数据
-      const submitData = {
-        phone: userPhone.value,
-        totalScore: result.totalScore,
-        section1Score: result.section1Score,
-        section2Score: result.section2Score,
-        section3Score: result.section3Score,
-        aiAnalysis: result.analysis || '',
-        startTime: new Date(startTime.value).toISOString(),
-        endTime: new Date(endTime.value).toISOString()
-      }
-      
-      console.log('提交数据:', submitData)
-      
-      // 调用后端API
-      const apiResponse = await surveyAPI.submitSurvey(submitData)
-      
-      if (apiResponse.success) {
-        console.log('数据库保存成功:', apiResponse)
-        // 将数据库ID添加到结果中
-        surveyResult.value.databaseId = apiResponse.data?.id
-      } else {
-        console.warn('数据库保存失败:', apiResponse.message)
-      }
-      
-    } catch (error) {
-      console.error('提交到数据库失败:', error.message)
-      // 即使数据库保存失败，也不影响本地问卷完成状态
-      // 用户仍然可以看到结果，只是数据没有保存到服务器
-    }
-    
-    console.log('问卷提交成功')
+    // 注意：不再在这里提交到数据库，延后到结果页面AI分析完成后再提交
+    console.log('问卷本地提交成功，等待结果页面完成AI分析后提交到数据库')
     console.log('最终 surveyResult:', surveyResult.value)
     console.log('isSubmitted:', isSubmitted.value)
     console.log('=== submitSurvey 结束 ===')
     return true
+  }
+
+  // 提交数据到数据库（在AI分析完成后调用）
+  const submitToDatabase = async (aiAnalysisResult) => {
+    console.log('=== submitToDatabase 开始 ===')
+    console.log('AI分析结果:', aiAnalysisResult)
+    
+    // 确保AI分析结果不为空，避免创建空记录
+    if (!aiAnalysisResult || aiAnalysisResult.trim() === '') {
+      console.warn('⚠️ AI分析结果为空，跳过数据库提交')
+      return { success: false, message: 'AI分析结果为空' }
+    }
+    
+    try {
+      // 动态导入API服务
+      const { surveyAPI } = await import('@/services/api.js')
+      
+      // 检查是否已有数据库记录ID
+      const databaseId = surveyResult.value?.databaseId
+      
+      if (databaseId) {
+        // 如果已有数据库记录，只更新AI分析内容
+        console.log('🔄 更新现有记录的AI分析内容:', { databaseId, aiAnalysisLength: aiAnalysisResult.length })
+        
+        const updateResponse = await surveyAPI.updateAIAnalysis(databaseId, aiAnalysisResult)
+        
+        if (updateResponse.success) {
+          console.log('✅ AI分析内容更新成功:', updateResponse)
+          
+          // 更新localStorage
+          saveToStorage({
+            answers: answers.value,
+            isSubmitted: isSubmitted.value,
+            surveyResult: surveyResult.value,
+            startTime: startTime.value,
+            endTime: endTime.value,
+            userPhone: userPhone.value
+          })
+          
+          return { success: true, data: updateResponse.data }
+        } else {
+          console.warn('❌ AI分析内容更新失败:', updateResponse.message)
+          return { success: false, message: updateResponse.message }
+        }
+        
+      } else {
+        // 如果没有数据库记录，先创建基础记录，再更新AI分析
+        console.log('📝 第一步：创建基础数据库记录')
+        
+        const submitData = {
+          phone: userPhone.value,
+          answers: answers.value,
+          totalScore: surveyResult.value.totalScore,
+          percentage: surveyResult.value.percentage,
+          section1Score: surveyResult.value.section1Score,
+          section2Score: surveyResult.value.section2Score,
+          section3Score: surveyResult.value.section3Score,
+          aiAnalysis: '', // 先创建空的AI分析
+          startTime: new Date(startTime.value).toISOString(),
+          endTime: new Date(endTime.value).toISOString()
+        }
+        
+        console.log('创建基础记录:', submitData)
+        
+        // 调用后端API创建记录
+        const createResponse = await surveyAPI.submitSurvey(submitData)
+        
+        if (createResponse.success) {
+          console.log('✅ 基础记录创建成功:', createResponse)
+          const newId = createResponse.data?.id
+          
+          // 将数据库ID保存到结果中
+          surveyResult.value.databaseId = newId
+          
+          // 第二步：更新AI分析内容
+          console.log('📝 第二步：更新AI分析内容')
+          const updateResponse = await surveyAPI.updateAIAnalysis(newId, aiAnalysisResult)
+          
+          if (updateResponse.success) {
+            console.log('✅ AI分析内容更新成功:', updateResponse)
+            
+            // 更新localStorage
+            saveToStorage({
+              answers: answers.value,
+              isSubmitted: isSubmitted.value,
+              surveyResult: surveyResult.value,
+              startTime: startTime.value,
+              endTime: endTime.value,
+              userPhone: userPhone.value
+            })
+            
+            return { success: true, data: { id: newId, ...updateResponse.data } }
+          } else {
+            console.warn('❌ AI分析内容更新失败:', updateResponse.message)
+            return { success: false, message: updateResponse.message }
+          }
+        } else {
+          console.warn('❌ 基础记录创建失败:', createResponse.message)
+          return { success: false, message: createResponse.message }
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ 提交到数据库失败:', error.message)
+      return { success: false, message: error.message }
+    } finally {
+      console.log('=== submitToDatabase 结束 ===')
+    }
   }
 
   const resetSurvey = () => {
@@ -477,6 +548,7 @@ export const useSurveyStore = defineStore('survey', () => {
     prevQuestion,
     goToQuestion,
     submitSurvey,
+    submitToDatabase,
     resetSurvey,
     exportResults,
     getQuestionProgress,

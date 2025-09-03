@@ -184,6 +184,35 @@ class SurveyResult {
   }
 
   /**
+   * 更新问卷结果的AI分析内容
+   * @param {number} id 问卷结果ID
+   * @param {string} aiAnalysis AI分析内容
+   * @returns {Promise<Object>} 更新结果
+   */
+  static async updateAIAnalysis(id, aiAnalysis) {
+    try {
+      console.log('🤖 更新AI分析内容:', { id, aiAnalysisLength: aiAnalysis?.length || 0 });
+      
+      const sql = 'UPDATE survey_results SET ai_analysis = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
+      const result = await query(sql, [aiAnalysis, id]);
+      
+      if (result.affectedRows === 0) {
+        throw new Error('未找到要更新的问卷结果');
+      }
+      
+      console.log('✅ AI分析内容更新成功');
+      return {
+        success: true,
+        id: id,
+        message: 'AI分析内容更新成功'
+      };
+    } catch (error) {
+      console.error('❌ 更新AI分析内容失败:', error.message);
+      throw new Error(`更新AI分析内容失败: ${error.message}`);
+    }
+  }
+
+  /**
    * 删除问卷结果
    * @param {number} id 问卷结果ID
    * @returns {Promise<Object>} 删除结果

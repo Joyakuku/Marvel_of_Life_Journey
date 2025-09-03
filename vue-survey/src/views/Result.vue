@@ -79,13 +79,6 @@
                   {{ result.level.description }}
                 </div>
                 
-                <div class="generate-ai-section">
-                  <button class="generate-ai-button" @click="generateAIAnalysis" :disabled="aiAnalysisLoading">
-                    <span class="ai-icon">🤖</span>
-                    生成AI智能分析
-                  </button>
-                  <p class="generate-ai-tip">点击获取更详细的个性化AI分析</p>
-                </div>
               </div>
             </div>
           </div>
@@ -147,19 +140,12 @@
               
               <!-- AI分析结果 -->
               <div v-else-if="customAiAnalysis || result.aiAnalysis" class="ai-text">
-                <div class="ai-analysis-header">
-                  <span class="ai-badge">🤖 AI分析</span>
-                  <button class="refresh-button" @click="refreshAIAnalysis" :disabled="aiAnalysisLoading">
-                    <span class="refresh-icon">🔄</span>
-                    重新分析
-                  </button>
-                </div>
                 <div class="ai-analysis-text">
                   {{ customAiAnalysis || result.aiAnalysis }}
                 </div>
               </div>
               
-              <!-- 默认AI分析（当没有AI分析时） -->
+              <!-- 默认AI分析（当没有AI分析时） 
               <div v-else class="ai-text">
                 <p>根据您的评估结果分析：</p>
                 <div class="ai-insights">
@@ -188,8 +174,9 @@
                     </div>
                   </div>
                 </div>
-              </div>
+              </div>-->
             </div>
+            
           </div>
         </div>
 
@@ -614,7 +601,24 @@ export default {
         
         if (response.success && response.data?.aiAnalysis) {
           customAiAnalysis.value = response.data.aiAnalysis
-          console.log('✅ AI分析生成成功')
+          console.log('✅ AI分析生成成功，内容长度:', response.data.aiAnalysis.length)
+          
+          // AI分析完成后，提交数据到数据库
+          console.log('🗄️ AI分析完成，开始提交数据到数据库...')
+          console.log('📋 当前surveyResult:', surveyStore.surveyResult)
+          console.log('📋 databaseId:', surveyStore.surveyResult?.databaseId)
+          try {
+            const dbResult = await surveyStore.submitToDatabase(response.data.aiAnalysis)
+            console.log('📤 submitToDatabase调用结果:', dbResult)
+            if (dbResult.success) {
+              console.log('✅ 数据库提交成功:', dbResult.data)
+            } else {
+              console.warn('⚠️ 数据库提交失败:', dbResult.message)
+            }
+          } catch (dbError) {
+            console.error('❌ 数据库提交异常:', dbError.message)
+          }
+          
         } else {
           throw new Error('AI分析响应格式错误')
         }
@@ -624,7 +628,30 @@ export default {
         aiAnalysisError.value = '生成AI分析时出现错误，请稍后重试'
         
         // 使用默认分析作为备选方案
-        customAiAnalysis.value = getDefaultAIAnalysis()
+        const defaultAnalysis = getDefaultAIAnalysis()
+        customAiAnalysis.value = defaultAnalysis
+        console.log('📝 生成默认分析，内容长度:', defaultAnalysis?.length || 0)
+        console.log('📝 默认分析内容预览:', defaultAnalysis?.substring(0, 100) + '...')
+        
+        // 只有当默认分析不为空时才提交到数据库
+        if (defaultAnalysis && defaultAnalysis.trim() !== '') {
+          console.log('🗄️ 使用默认分析提交数据到数据库...')
+          console.log('📋 当前surveyResult:', surveyStore.surveyResult)
+          console.log('📋 databaseId:', surveyStore.surveyResult?.databaseId)
+          try {
+            const dbResult = await surveyStore.submitToDatabase(defaultAnalysis)
+            console.log('📤 submitToDatabase调用结果（默认分析）:', dbResult)
+            if (dbResult.success) {
+              console.log('✅ 数据库提交成功（默认分析）:', dbResult.data)
+            } else {
+              console.warn('⚠️ 数据库提交失败（默认分析）:', dbResult.message)
+            }
+          } catch (dbError) {
+            console.error('❌ 数据库提交异常（默认分析）:', dbError.message)
+          }
+        } else {
+          console.warn('⚠️ 默认分析为空，跳过数据库提交')
+        }
         
       } finally {
         aiAnalysisLoading.value = false
