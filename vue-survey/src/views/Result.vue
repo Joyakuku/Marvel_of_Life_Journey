@@ -17,24 +17,25 @@
             
             <div class="score-display">
               <div class="score-circle">
-                <svg class="progress-ring" width="120" height="120" @click="handleRingClick">
+                <svg class="progress-ring" width="120" height="120" viewBox="0 0 120 120" preserveAspectRatio="xMidYMid meet" @click="handleRingClick">
                   <!-- 背景圆环 -->
                   <circle
                     class="progress-ring-background"
                     stroke="#e9ecef"
-                    stroke-width="16"
-                    fill="transparent"
-                    r="50"
-                    cx="60"
-                    cy="60"
-                  />
+                    :stroke-width="ringStroke"
+                     fill="transparent"
+                     r="50"
+                     cx="60"
+                     cy="60"
+                     vector-effect="non-scaling-stroke"
+                   />
                   <!-- 各维度圆环段 -->
                    <circle
                      v-for="(segment, index) in ringSegments"
                      :key="index"
                      class="progress-ring-segment"
                      :stroke="segment.color"
-                     stroke-width="16"
+                     :stroke-width="ringStroke"
                      fill="transparent"
                      r="50"
                      cx="60"
@@ -42,6 +43,7 @@
                      :stroke-dasharray="segment.dashArray"
                      :stroke-dashoffset="segment.dashOffset"
                      :style="{ cursor: 'pointer', pointerEvents: 'none' }"
+                     vector-effect="non-scaling-stroke"
                    />
                   <!-- 透明的点击区域，分为三个120度扇形 -->
                   <path
@@ -82,7 +84,7 @@
               </div>
             </div>
           </div>
-        </section>
+          </section>
 
         <!-- 分类得分 -->
         <section class="categories-section">
@@ -228,17 +230,13 @@
         <button @click="retakeSurvey" class="action-btn secondary">
           <span class="btn-text">重新测评</span>
         </button>
-        
-        <button @click="shareResult" class="action-btn primary">
-          <span class="btn-text">分享结果</span>
-        </button>
       </div>
     </footer>
   </div>
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSurveyStore } from '@/stores/survey'
 import { QUESTION_SECTIONS, useQuestions } from '@/composables/useQuestions'
@@ -392,6 +390,11 @@ export default {
     const getCategoryPercentage = (categoryKey) => {
       if (!result.value) return 0
       const category = result.value.sectionScores[categoryKey]
+      // 添加空值保护，避免访问undefined的属性
+      if (!category || typeof category.max !== 'number' || typeof category.score !== 'number') {
+        console.warn(`分区数据异常: ${categoryKey}`, category)
+        return 0
+      }
       return category.max > 0 ? Math.round((category.score / category.max) * 100) : 0
     }
     
@@ -463,22 +466,7 @@ export default {
     
 
     
-    const shareResult = () => {
-      if (navigator.share) {
-        navigator.share({
-          title: '造血干细胞捐献潜力评估结果',
-          text: `我的评估结果：${result.value.level.level}（${result.value.percentage}%）`,
-          url: window.location.href
-        })
-      } else {
-        // 复制到剪贴板
-        const text = `我完成了造血干细胞捐献潜力评估，结果为：${result.value.level.level}（${result.value.percentage}%）`
-        navigator.clipboard.writeText(text).then(() => {
-          alert('结果已复制到剪贴板')
-        })
-      }
-      console.log('分享评估结果')
-    }
+
     
     const retakeSurvey = () => {
       surveyStore.resetSurvey()
@@ -563,10 +551,10 @@ export default {
              recommendations.push('特别建议关注身体健康状况，保持良好的生活习惯')
              break
            case QUESTION_SECTIONS.INTENTION:
-             recommendations.push('可以与家人朋友多沟通，了解他们对捐献的看法和支持度')
+             recommendations.push('可以与家人朋友多沟通，了解他们对捐献的看法')
              break
            case QUESTION_SECTIONS.KNOWLEDGE:
-             recommendations.push('建议通过官方渠道了解更多造血干细胞捐献的科学知识')
+             recommendations.push('建议通过官方渠道了解更多acee细胞捐献的科学知识')
              break
          }
        }
@@ -603,6 +591,13 @@ export default {
           customAiAnalysis.value = response.data.aiAnalysis
           console.log('✅ AI分析生成成功，内容长度:', response.data.aiAnalysis.length)
           
+          // 先把AI分析写入本地store并持久化，避免用户刷新导致不显示
+          try {
+            surveyStore.updateLocalAIAnalysis(response.data.aiAnalysis)
+          } catch (e) {
+            console.warn('写入本地AI分析失败（不影响后续提交流程）:', e)
+          }
+          
           // AI分析完成后，提交数据到数据库
           console.log('🗄️ AI分析完成，开始提交数据到数据库...')
           console.log('📋 当前surveyResult:', surveyStore.surveyResult)
@@ -635,6 +630,13 @@ export default {
         
         // 只有当默认分析不为空时才提交到数据库
         if (defaultAnalysis && defaultAnalysis.trim() !== '') {
+          // 先写入本地store并持久化，避免刷新丢失
+          try {
+            surveyStore.updateLocalAIAnalysis(defaultAnalysis)
+          } catch (e) {
+            console.warn('写入本地AI分析失败（默认分析）:', e)
+          }
+          
           console.log('🗄️ 使用默认分析提交数据到数据库...')
           console.log('📋 当前surveyResult:', surveyStore.surveyResult)
           console.log('📋 databaseId:', surveyStore.surveyResult?.databaseId)
@@ -666,7 +668,7 @@ export default {
       
       // 总体评价
       if (percentage >= 80) {
-        analysis += `🎉 您的总体表现优秀，得分率达到${percentage}%，展现出良好的综合素质。\n\n`
+        analysis += `🎉 您的总体表现优秀，得分率达到${percentage}%，呈现出良好的综合素质。\n\n`
       } else if (percentage >= 65) {
         analysis += `👍 您的总体表现良好，得分率为${percentage}%，具备一定的基础能力。\n\n`
       } else if (percentage >= 50) {
@@ -699,8 +701,33 @@ export default {
       generateAIAnalysis()
     }
     
-    // 生命周期
+    
+    /**
+     * 根据视口宽度动态调整圆环描边粗细
+     * 说明：
+     * - 结合 SVG 的 vector-effect="non-scaling-stroke"，确保缩放布局下描边视觉宽度稳定
+     * - 避免小屏幕上固定16px描边显得过粗，提升不同设备上的一致性
+     */
+    const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
+    const ringStroke = computed(() => {
+      const w = windowWidth.value
+      if (w <= 360) return 10
+      if (w <= 480) return 12
+      if (w <= 768) return 14
+      return 16
+    })
+
+    const handleResize = () => {
+      windowWidth.value = window.innerWidth
+      // 调试日志：观察不同宽度下的描边值，便于后续调优阈值
+      console.debug('[Result] 窗口尺寸变化:', windowWidth.value, 'ringStroke:', ringStroke.value)
+    }
+
     onMounted(() => {
+      // 监听窗口尺寸变化，动态调整圆环描边
+      window.addEventListener('resize', handleResize)
+
+      // 原有业务：挂载后校验结果与AI分析生成逻辑
       console.log('Result页面挂载')
       // 延迟检查，避免热重载时的状态不一致问题
       setTimeout(() => {
@@ -711,22 +738,40 @@ export default {
           return
         }
         console.log('评估结果已加载:', surveyStore.surveyResult)
-        
+
         // 如果没有AI分析且当前显示AI标签页，自动生成AI分析
-        if (activeTab.value === 'ai' && !result.value?.aiAnalysis && !customAiAnalysis.value) {
+        // 增加“来源为database则不自动生成”的限制，以复用历史结果而不触发新生成
+        // 进一步增强：若存在 databaseId 或 _id 也视为历史数据（即使 source 缺失）
+        const isHistorical = (result.value?.source === 'database') || !!(result.value?.databaseId || result.value?._id)
+
+        if (isHistorical) {
+          console.info('检测到历史数据库结果，跳过自动生成AI分析')
+          // 如果历史数据中包含AI分析，加载到customAiAnalysis中显示
+          if (result.value?.aiAnalysis && !customAiAnalysis.value) {
+            customAiAnalysis.value = result.value.aiAnalysis
+            console.log('已加载历史AI分析，内容长度:', result.value.aiAnalysis.length)
+          }
+        } else if (activeTab.value === 'ai' && !result.value?.aiAnalysis && !customAiAnalysis.value) {
+          // 非历史数据且没有AI分析时，自动生成
           setTimeout(() => {
             generateAIAnalysis()
           }, 500)
         }
       }, 100)
     })
-    
+
+    onUnmounted(() => {
+      window.removeEventListener('resize', handleResize)
+    })
+
+    // 返回给模板使用的响应式数据与方法
     return {
       surveyStore,
       result,
       selectedCategory,
       circumference,
       strokeDashoffset,
+      ringStroke,
       categoryDetails,
       ringSegments,
       clickAreas,
@@ -738,7 +783,7 @@ export default {
       handleRingClick,
       getTooltipPosition,
       getPersonalizedRecommendations,
-      shareResult,
+
       retakeSurvey,
       goToSurvey,
       // 题目解析方法
@@ -747,15 +792,15 @@ export default {
       isCorrectAnswer,
       getUserScore,
       // AI分析方法
-       activeTab,
-       getAIInsightForSection,
-       getAIRecommendation,
-       aiAnalysisLoading,
-       aiAnalysisError,
-       customAiAnalysis,
-       generateAIAnalysis,
-       refreshAIAnalysis
-     }
+      activeTab,
+      getAIInsightForSection,
+      getAIRecommendation,
+      aiAnalysisLoading,
+      aiAnalysisError,
+      customAiAnalysis,
+      generateAIAnalysis,
+      refreshAIAnalysis
+    }
    }
 }
 </script>
@@ -785,24 +830,31 @@ export default {
 /* 横排布局容器 */
 .horizontal-layout {
   display: flex;
-  gap: 20px; /* 缩小间距 */
+  flex-direction: column; /* 改为垂直布局 */
+  gap: 20px;
   margin-bottom: 40px;
-  align-items: flex-start;
-  flex-wrap: nowrap; /* 确保不换行 */
-  width: 100%; /* 确保占满容器宽度 */
+  align-items: center; /* 居中对齐 */
+  width: 100%;
 }
 
 /* 总体得分 */
 .score-section {
-  flex: 0 0 300px; /* 固定宽度300px */
-  min-width: 280px; /* 最小宽度 */
+  width: 100%; /* 占屏幕横向100% */
+  max-width: 490px; /* 设置最大宽度避免过宽 */
+  margin: 0 auto; /* 居中显示 */
+  display: flex;
+  justify-content: center; /* 内容居中 */
 }
 
 .main-score {
   background: white;
   border-radius: 10px;
-  padding: 12px;
+  padding: 20px; /* 增加内边距 */
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  width: 100%; /* 占满父容器 */
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* 内容居中对齐 */
 }
 
 .score-header {
@@ -854,11 +906,25 @@ export default {
 .score-circle {
   position: relative;
   flex-shrink: 0;
+  width: 120px; /* 固定容器尺寸，避免flex缩放带来视觉差异 */
+  height: 120px;
 }
 
 .progress-ring {
   transform: rotate(-90deg);
   position: relative;
+  width: 120px; /* 明确设置，配合viewBox保持比例 */
+  height: 120px;
+  display: block; /* 避免内联元素间隙影响布局 */
+}
+
+/* 小屏自适应：在窄屏时适当缩小圆环，但保证描边不缩放（依赖 non-scaling-stroke） */
+@media (max-width: 480px) {
+  .score-circle,
+  .progress-ring {
+    width: 100px;
+    height: 100px;
+  }
 }
 
 .progress-ring-progress {

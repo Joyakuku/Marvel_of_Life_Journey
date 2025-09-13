@@ -6,6 +6,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import Survey from '@/views/Survey.vue'
 import Result from '@/views/Result.vue'
 import Home from '@/views/Home.vue'
+import Admin from '@/views/Admin.vue'
 
 /**
  * 路由配置数组
@@ -41,6 +42,15 @@ const routes = [
     }
   },
   {
+    path: '/admin',
+    name: 'Admin',
+    component: Admin,
+    meta: {
+      title: '管理员后台',
+      description: '问卷数据分析仪表盘'
+    }
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     redirect: '/'
@@ -73,6 +83,23 @@ router.beforeEach((to, from, next) => {
   // 设置页面标题
   if (to.meta.title) {
     document.title = to.meta.title
+  }
+  
+  // 简单的管理员访问控制（仅用于隐藏入口，非安全手段）
+  if (to.path === '/admin') {
+    try {
+      const flag = sessionStorage.getItem('admin_mode')
+      if (!flag) {
+        console.warn('未检测到管理员标记，阻止直接访问后台')
+        return next('/')
+      } else {
+        // 一次性使用后清除，避免后续误入
+        sessionStorage.removeItem('admin_mode')
+      }
+    } catch (e) {
+      console.warn('访问会话存储失败:', e)
+      return next('/')
+    }
   }
   
   // 检查路由访问权限

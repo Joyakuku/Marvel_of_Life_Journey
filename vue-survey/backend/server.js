@@ -22,15 +22,39 @@ const PORT = process.env.PORT || 3001;
  */
 // CORS配置
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // 支持本地无Origin（如curl、Postman）
+    if (!origin) return callback(null, true)
+    // 从环境变量读取白名单，支持逗号分隔
+    const list = (process.env.CORS_ORIGIN || 'http://localhost:3000').split(',').map(s => s.trim())
+    if (list.includes(origin)) {
+      return callback(null, true)
+    }
+    // 允许直接访问IP本身（防止遗漏80/443端口）
+    if (origin.startsWith('http://82.157.38.149') || origin.startsWith('https://82.157.38.149')) {
+      return callback(null, true)
+    }
+    return callback(new Error(`Not allowed by CORS: ${origin}`))
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Length', 'Content-Type'],
+  maxAge: 600 // 预检结果缓存10分钟
+}))
 
 // 解析JSON请求体
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// 处理私有网络访问（Private Network Access）
+app.use((req, res, next) => {
+  // 为响应添加 'Access-Control-Allow-Private-Network: true' 头
+  // 这是为了解决从公共网络地址（如部署的前端）访问本地开发服务器（localhost）
+  // 时出现的CORS策略问题。
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  next();
+});
 
 // 请求日志中间件
 app.use((req, res, next) => {
@@ -130,7 +154,7 @@ async function startServer() {
     }
     
     // 启动服务器
-    const server = app.listen(PORT, () => {
+    const server = app.listen(PORT, '0.0.0.0',() => {
       console.log(`\n🎉 服务器启动成功!`);
       console.log(`📍 服务地址: http://localhost:${PORT}`);
       console.log(`🏥 健康检查: http://localhost:${PORT}/health`);

@@ -101,7 +101,7 @@ class SurveyResult {
       const sql = `
         SELECT * FROM survey_results 
         WHERE phone = ? 
-        ORDER BY created_at DESC 
+        ORDER BY id DESC 
         LIMIT ${limitInt}
       `;
       
@@ -126,34 +126,38 @@ class SurveyResult {
    */
   static async findAll(page = 1, pageSize = 20) {
     try {
-      const offset = (page - 1) * pageSize;
+      // 保障分页参数为安全整数，避免SQL注入与兼容性问题
+      const pageInt = Math.max(1, parseInt(page, 10) || 1)
+      const pageSizeInt = Math.max(1, parseInt(pageSize, 10) || 20)
+      const offsetInt = (pageInt - 1) * pageSizeInt
       
       // 查询总数
-      const countSql = 'SELECT COUNT(*) as total FROM survey_results';
-      const countResult = await query(countSql);
-      const total = countResult[0].total;
+      const countSql = 'SELECT COUNT(*) as total FROM survey_results'
+      const countResult = await query(countSql)
+      const total = countResult[0].total
       
-      // 查询数据
+      // 说明：部分 MySQL 版本/代理（或使用二进制协议的驱动）对 LIMIT ? OFFSET ? 的占位符支持不一致，
+      // 会导致 SQL 解析错误从而返回 500。这里改为内联安全整数，确保广泛兼容。
       const dataSql = `
         SELECT * FROM survey_results 
-        ORDER BY created_at DESC 
-        LIMIT ? OFFSET ?
-      `;
+        ORDER BY id DESC 
+        LIMIT ${pageSizeInt} OFFSET ${offsetInt}
+      `
       
-      const results = await query(dataSql, [pageSize, offset]);
+      const results = await query(dataSql)
       
       return {
         data: results,
         pagination: {
-          page,
-          pageSize,
+          page: pageInt,
+          pageSize: pageSizeInt,
           total,
-          totalPages: Math.ceil(total / pageSize)
+          totalPages: Math.ceil(total / pageSizeInt)
         }
-      };
+      }
     } catch (error) {
-      console.error('❌ 查询所有问卷结果失败:', error.message);
-      throw new Error(`查询问卷结果失败: ${error.message}`);
+      console.error('❌ 查询所有问卷结果失败:', error.message)
+      throw new Error(`查询问卷结果失败: ${error.message}`)
     }
   }
 

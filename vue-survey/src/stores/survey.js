@@ -22,8 +22,91 @@ export const useSurveyStore = defineStore('survey', () => {
       const savedState = localStorage.getItem('survey-state')
       if (savedState) {
         const parsed = JSON.parse(savedState)
-        console.log('从localStorage恢复状态:', parsed)
-        return parsed
+        console.log('从localStorage恢复状态(原始):', parsed)
+
+        // === 迁移本地存储的旧数据结构到新结构 ===
+        // 说明：老版本无 source/sectionScores/maxTotal/percentage 等字段，或字段名不一致
+        const migrateSavedState = (state) => {
+          if (!state || typeof state !== 'object') return state
+          const cloned = { ...state }
+
+          // 仅在存在 surveyResult 时进行迁移
+          if (cloned.surveyResult && typeof cloned.surveyResult === 'object') {
+            const sr = { ...cloned.surveyResult }
+
+            // 1) 统一 AI 分析字段名
+            if (!sr.aiAnalysis && sr.analysis) {
+              sr.aiAnalysis = sr.analysis
+            }
+
+            // 2) 构造 sectionScores（兼容旧的 section1/2/3Score 字段）
+            if (!sr.sectionScores || typeof sr.sectionScores !== 'object') {
+              const sectionScores = {
+                health: { score: sr.section1Score ?? 0, max: sr.section1Max ?? 0 },
+                intention: { score: sr.section2Score ?? 0, max: sr.section2Max ?? 0 },
+                knowledge: { score: sr.section3Score ?? 0, max: sr.section3Max ?? 0 }
+              }
+              sr.sectionScores = sectionScores
+            }
+
+            // 3) 计算各分区最大分（若缺失），避免 max 为 0 导致百分比异常
+            const ensureSectionMaxes = () => {
+              try {
+                // 基于题库动态计算分区最大分，增强可移植性
+                const calcMaxForSection = (sectionKey) => {
+                  const sectionQuestions = getQuestionsBySection(sectionKey)
+                  return sectionQuestions.reduce((acc, q) => {
+                    const maxForQ = q?.scoreMap ? Math.max(...Object.values(q.scoreMap)) : 0
+                    return acc + (isFinite(maxForQ) ? maxForQ : 0)
+                  }, 0)
+                }
+
+                const maxHealth = sr.sectionScores?.health?.max || calcMaxForSection(QUESTION_SECTIONS.HEALTH)
+                const maxIntention = sr.sectionScores?.intention?.max || calcMaxForSection(QUESTION_SECTIONS.INTENTION)
+                const maxKnowledge = sr.sectionScores?.knowledge?.max || calcMaxForSection(QUESTION_SECTIONS.KNOWLEDGE)
+
+                sr.sectionScores.health.max = maxHealth
+                sr.sectionScores.intention.max = maxIntention
+                sr.sectionScores.knowledge.max = maxKnowledge
+
+                // 记录总最大分
+                sr.maxTotal = maxHealth + maxIntention + maxKnowledge
+              } catch (e) {
+                console.warn('迁移: 计算分区最大分失败，使用现有 max 值', e)
+                const h = sr.sectionScores?.health?.max || 0
+                const i = sr.sectionScores?.intention?.max || 0
+                const k = sr.sectionScores?.knowledge?.max || 0
+                sr.maxTotal = h + i + k
+              }
+            }
+            ensureSectionMaxes()
+
+            // 4) 统一 totalScore（若缺失则按分区分数求和）
+            const sumSectionScores = (
+              (sr.sectionScores?.health?.score || 0) +
+              (sr.sectionScores?.intention?.score || 0) +
+              (sr.sectionScores?.knowledge?.score || 0)
+            )
+            sr.totalScore = (typeof sr.totalScore === 'number' && isFinite(sr.totalScore)) ? sr.totalScore : sumSectionScores
+
+            // 5) 统一 percentage（始终以 total/max 重新计算，避免旧缓存不一致）
+            const maxTotalSafe = (typeof sr.maxTotal === 'number' && sr.maxTotal > 0) ? sr.maxTotal : 100
+            sr.percentage = Math.round((sr.totalScore / maxTotalSafe) * 100)
+
+            // 6) 标记来源：若存在 databaseId 且无 source，则设为 database
+            if (!sr.source && (sr.databaseId || sr._id)) {
+              sr.source = 'database'
+            }
+
+            cloned.surveyResult = sr
+          }
+
+          return cloned
+        }
+
+        const migrated = migrateSavedState(parsed)
+        console.log('从localStorage恢复状态(迁移后):', migrated)
+        return migrated
       }
     } catch (error) {
       console.warn('恢复状态失败:', error)
@@ -221,10 +304,20 @@ export const useSurveyStore = defineStore('survey', () => {
     // 计算得分
     const result = calculateScore(answers.value)
     console.log('计算得分结果:', result)
+
+    // 兼容性处理：将分类得分映射为 section1/2/3 的扁平字段，确保后续提交时不会丢失
+    const mappedSection1Score = result.sectionScores?.[QUESTION_SECTIONS.HEALTH]?.score || 0
+    const mappedSection2Score = result.sectionScores?.[QUESTION_SECTIONS.INTENTION]?.score || 0
+    const mappedSection3Score = result.sectionScores?.[QUESTION_SECTIONS.KNOWLEDGE]?.score || 0
+    console.log('分区得分映射:', { mappedSection1Score, mappedSection2Score, mappedSection3Score })
     
     // 添加额外信息
     surveyResult.value = {
       ...result,
+      // 扁平化分区得分，便于API序列化与后端入库
+      section1Score: mappedSection1Score,
+      section2Score: mappedSection2Score,
+      section3Score: mappedSection3Score,
       answers: { ...answers.value },
       duration: surveyDuration.value,
       submittedAt: new Date().toISOString(),
@@ -278,6 +371,14 @@ export const useSurveyStore = defineStore('survey', () => {
         if (updateResponse.success) {
           console.log('✅ AI分析内容更新成功:', updateResponse)
           
+          // 将最新AI分析同步到本地状态，保证刷新后可见
+          try {
+            surveyResult.value.aiAnalysis = aiAnalysisResult
+            surveyResult.value.analysis = aiAnalysisResult // 向后兼容
+          } catch (e) {
+            console.warn('同步AI分析到本地状态时出错:', e)
+          }
+          
           // 更新localStorage
           saveToStorage({
             answers: answers.value,
@@ -297,15 +398,21 @@ export const useSurveyStore = defineStore('survey', () => {
       } else {
         // 如果没有数据库记录，先创建基础记录，再更新AI分析
         console.log('📝 第一步：创建基础数据库记录')
+
+        // 兜底：当 surveyResult 中没有扁平字段时，基于 sectionScores 动态计算，避免提交0
+        const s1 = surveyResult.value?.section1Score ?? (surveyResult.value?.sectionScores?.[QUESTION_SECTIONS.HEALTH]?.score ?? 0)
+        const s2 = surveyResult.value?.section2Score ?? (surveyResult.value?.sectionScores?.[QUESTION_SECTIONS.INTENTION]?.score ?? 0)
+        const s3 = surveyResult.value?.section3Score ?? (surveyResult.value?.sectionScores?.[QUESTION_SECTIONS.KNOWLEDGE]?.score ?? 0)
+        console.log('将要提交的分区得分:', { s1, s2, s3 })
         
         const submitData = {
           phone: userPhone.value,
           answers: answers.value,
           totalScore: surveyResult.value.totalScore,
           percentage: surveyResult.value.percentage,
-          section1Score: surveyResult.value.section1Score,
-          section2Score: surveyResult.value.section2Score,
-          section3Score: surveyResult.value.section3Score,
+          section1Score: s1,
+          section2Score: s2,
+          section3Score: s3,
           aiAnalysis: '', // 先创建空的AI分析
           startTime: new Date(startTime.value).toISOString(),
           endTime: new Date(endTime.value).toISOString()
@@ -329,6 +436,14 @@ export const useSurveyStore = defineStore('survey', () => {
           
           if (updateResponse.success) {
             console.log('✅ AI分析内容更新成功:', updateResponse)
+            
+            // 将最新AI分析同步到本地状态，保证刷新后可见
+            try {
+              surveyResult.value.aiAnalysis = aiAnalysisResult
+              surveyResult.value.analysis = aiAnalysisResult // 向后兼容
+            } catch (e) {
+              console.warn('同步AI分析到本地状态时出错:', e)
+            }
             
             // 更新localStorage
             saveToStorage({
@@ -356,6 +471,33 @@ export const useSurveyStore = defineStore('survey', () => {
       return { success: false, message: error.message }
     } finally {
       console.log('=== submitToDatabase 结束 ===')
+    }
+  }
+
+  /**
+   * 将AI分析结果写入到本地store，并立即持久化到localStorage
+   * 用于在生成AI分析成功后，数据库提交之前，确保刷新不丢失
+   * @param {string} aiText - AI分析文本
+   */
+  const updateLocalAIAnalysis = (aiText) => {
+    try {
+      if (!aiText || typeof aiText !== 'string') return
+      // 同步到本地的surveyResult
+      if (!surveyResult.value) surveyResult.value = {}
+      surveyResult.value.aiAnalysis = aiText
+      surveyResult.value.analysis = aiText // 兼容旧字段
+      // 持久化
+      saveToStorage({
+        answers: answers.value,
+        isSubmitted: isSubmitted.value,
+        surveyResult: surveyResult.value,
+        startTime: startTime.value,
+        endTime: endTime.value,
+        userPhone: userPhone.value
+      })
+      console.log('📝 已将AI分析写入本地状态并持久化，长度:', aiText.length)
+    } catch (e) {
+      console.warn('持久化AI分析失败:', e)
     }
   }
 
@@ -401,31 +543,125 @@ export const useSurveyStore = defineStore('survey', () => {
     try {
       // 设置用户手机号
       userPhone.value = surveyData.phone || ''
+
+      // 解析历史答案并写入全局 answers（非常关键：题目解析依赖该字段展示“您的答案”）
+      // 兼容后端可能以字符串或JSON对象存储的场景，确保前端拿到的是对象
+      const parsedAnswers = (() => {
+        const raw = surveyData.answers
+        if (raw == null) return {}
+        if (typeof raw === 'string') {
+          try {
+            const obj = JSON.parse(raw)
+            return obj && typeof obj === 'object' ? obj : {}
+          } catch (e) {
+            console.warn('历史记录 answers 为字符串但解析失败，将置为空。原始值:', raw)
+            return {}
+          }
+        }
+        if (typeof raw === 'object') {
+          // 浅拷贝，避免后续意外修改原对象
+          return { ...raw }
+        }
+        return {}
+      })()
+      answers.value = parsedAnswers
+      console.log('历史答案已载入，条目数:', Object.keys(answers.value).length)
       
-      // 重构问卷结果数据
-      surveyResult.value = {
-        totalScore: surveyData.totalScore || 0,
-        section1Score: surveyData.section1Score || 0,
-        section2Score: surveyData.section2Score || 0,
-        section3Score: surveyData.section3Score || 0,
-        analysis: surveyData.aiAnalysis || '',
-        submittedAt: surveyData.createdAt || new Date().toISOString(),
-        databaseId: surveyData.id,
-        // 计算百分比和等级（基于总分计算）
-        percentage: Math.round((surveyData.totalScore / 100) * 100), // 假设满分100
-        level: {
-          level: surveyData.totalScore >= 80 ? '优秀' : 
-                 surveyData.totalScore >= 60 ? '良好' : 
-                 surveyData.totalScore >= 40 ? '一般' : '需改进',
-          description: '基于历史问卷数据的评估结果'
+      // 计算本问卷的最大可得分（不依赖用户答案）
+      // 使用 calculateScore({}) 可遍历题库并统计每题的最大分，从而得到总maxScore与分区max
+      const maxInfo = calculateScore({})
+      const totalMaxScore = maxInfo?.maxScore || 100 // 兜底100分
+      const sectionMaxMap = maxInfo?.sectionScores || {
+        [QUESTION_SECTIONS.HEALTH]: { max: 0, score: 0 },
+        [QUESTION_SECTIONS.INTENTION]: { max: 0, score: 0 },
+        [QUESTION_SECTIONS.KNOWLEDGE]: { max: 0, score: 0 }
+      }
+
+      // 将数据库中的扁平字段映射为按枚举键的分区对象，结构为 { score, max }
+      const sectionScores = {
+        [QUESTION_SECTIONS.HEALTH]: {
+          // 健康状况
+          score: Number(surveyData.section1_score || surveyData.section1Score || 0),
+          max: Number(sectionMaxMap[QUESTION_SECTIONS.HEALTH]?.max || 0)
         },
-        // 分段得分
-        sectionScores: {
-          section1: surveyData.section1Score || 0,
-          section2: surveyData.section2Score || 0,
-          section3: surveyData.section3Score || 0
+        [QUESTION_SECTIONS.INTENTION]: {
+          // 捐献意愿
+          score: Number(surveyData.section2_score || surveyData.section2Score || 0),
+          max: Number(sectionMaxMap[QUESTION_SECTIONS.INTENTION]?.max || 0)
+        },
+        [QUESTION_SECTIONS.KNOWLEDGE]: {
+          // 知识认知
+          score: Number(surveyData.section3_score || surveyData.section3Score || 0),
+          max: Number(sectionMaxMap[QUESTION_SECTIONS.KNOWLEDGE]?.max || 0)
         }
       }
+
+      // 统一解析总分：优先数据库字段(total_score)，其次驼峰(totalScore)，否则回退为各分区之和
+      // 这样可以避免由于字段名不一致导致的总分计算错误
+      const parsedTotalScore = (() => {
+        const fromDb = Number(surveyData.total_score)
+        if (!Number.isNaN(fromDb) && fromDb > 0) return fromDb
+        const fromCamel = Number(surveyData.totalScore)
+        if (!Number.isNaN(fromCamel) && fromCamel > 0) return fromCamel
+        const sumSections =
+          Number(surveyData.section1_score || surveyData.section1Score || 0) +
+          Number(surveyData.section2_score || surveyData.section2Score || 0) +
+          Number(surveyData.section3_score || surveyData.section3Score || 0)
+        return Number(sumSections) || 0
+      })()
+
+      // 计算总百分比（优先使用后端值，其次使用统一后的总分 / 最大分）
+      const percentage = (() => {
+        const raw = Number(surveyData.percentage)
+        if (!Number.isNaN(raw) && raw >= 0) return Math.round(raw)
+        return totalMaxScore > 0 ? Math.round((parsedTotalScore / totalMaxScore) * 100) : 0
+      })()
+
+      // 统一构造 surveyResult，字段与提交流程保持一致，避免Result.vue读取结构不一致
+      surveyResult.value = {
+        // 基础分数
+        totalScore: Number(parsedTotalScore),
+        maxScore: Number(totalMaxScore),
+        percentage,
+
+        // 分区扁平字段（兼容历史逻辑）
+        section1Score: Number(surveyData.section1_score || surveyData.section1Score || 0),
+        section2Score: Number(surveyData.section2_score || surveyData.section2Score || 0),
+        section3Score: Number(surveyData.section3_score || surveyData.section3Score || 0),
+
+        // 分区对象（供Result.vue等组件使用）
+        sectionScores,
+
+        // 同步历史答案，保证导出/展示一致
+        answers: answers.value,
+
+        // AI分析字段：同时保留 aiAnalysis 与 analysis 两个字段，向后兼容
+        aiAnalysis: surveyData.ai_analysis || surveyData.aiAnalysis || '',
+        analysis: surveyData.ai_analysis || surveyData.aiAnalysis || '',
+
+        // 等级描述（与计算结果保持一致的简单分档）
+        level: {
+          level: percentage >= 80 ? '优秀' : percentage >= 60 ? '良好' : percentage >= 40 ? '一般' : '需改进',
+          description: '基于历史问卷数据的评估结果'
+        },
+
+        // 其他元数据
+        submittedAt: surveyData.created_at || surveyData.createdAt || new Date().toISOString(),
+        databaseId: surveyData.id,
+        
+        /**
+         * 来源标记：用于前端逻辑判断（例如Result.vue避免对历史数据自动生成AI分析）
+         * database 表示该结果来自后端已有数据，而非本次新提交
+         */
+        source: 'database'
+      }
+      
+      console.log('历史结果已映射为标准结构:', {
+        totalScore: surveyResult.value.totalScore,
+        maxScore: surveyResult.value.maxScore,
+        percentage: surveyResult.value.percentage,
+        sectionScores: surveyResult.value.sectionScores
+      })
       
       // 标记为已提交
       isSubmitted.value = true
@@ -555,6 +791,7 @@ export const useSurveyStore = defineStore('survey', () => {
     getSectionProgress,
     setUserPhone,
     loadExistingSurveyResult,
+    updateLocalAIAnalysis,
     
     // 工具方法
     getAllQuestions,

@@ -4,9 +4,10 @@
  */
 
 // API基础配置
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
+const API_BASE_URL = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_BASE_URL || '')
 const API_TIMEOUT = 10000 // 10秒超时
 const AI_TIMEOUT = 30000 // AI分析专用30秒超时
+// 说明：开发环境下通过Vite代理转发到后端，避免浏览器CORS预检；生产环境使用环境变量配置的后端地址
 
 /**
  * 通用请求函数

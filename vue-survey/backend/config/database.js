@@ -16,9 +16,17 @@ const dbConfig = {
   timezone: '+08:00',
   // 连接池配置
   connectionLimit: 10,
-  acquireTimeout: 60000,
-  timeout: 60000,
-  reconnect: true
+  // acquireTimeout: 60000,  // MySQL2中无效，已移除
+  //timeout: 60000,
+  //reconnect: true
+  idleTimeout: 60000,    // 空闲连接超时时间
+  queueLimit: 0,         // 队列限制，0表示无限制
+  // 添加有效的MySQL2连接池配置
+  waitForConnections: true,  // 当连接池满时是否等待
+  maxIdle: 10,              // 最大空闲连接数
+  idleTimeout: 60000,       // 空闲连接超时时间（毫秒）
+  enableKeepAlive: true,    // 启用TCP keep-alive
+  keepAliveInitialDelay: 0  // keep-alive初始延迟
 };
 
 // 创建连接池
