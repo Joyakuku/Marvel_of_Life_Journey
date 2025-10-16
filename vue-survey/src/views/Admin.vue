@@ -124,6 +124,41 @@
         </div>
       </div>
     </div>
+
+    <!-- 祝福审核后台 -->
+    <section class="review-section">
+      <h3 class="record-title">祝福审核</h3>
+      <div class="review-toolbar">
+        <input v-model="adminToken" placeholder="输入管理员令牌(X-Admin-Token)" />
+        <button @click="saveAdminToken">保存令牌</button>
+        <select v-model="reviewStatus">
+          <option value="pending">待审核</option>
+          <option value="approved">已通过</option>
+          <option value="rejected">已驳回</option>
+        </select>
+        <button @click="loadBlessings">刷新列表</button>
+      </div>
+      <ul class="review-list">
+        <li v-for="b in blessings" :key="b.id" class="review-item">
+          <div class="review-meta">
+            <span>#{{ b.id }}</span>
+            <span>{{ (b.phone || '').replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') }}</span>
+            <span class="badge">{{ b.tag || '无标签' }}</span>
+            <span class="status">{{ b.review_status }}</span>
+            <span class="time">{{ b.created_at ? new Date(b.created_at).toLocaleString() : '-' }}</span>
+          </div>
+          <div class="review-content">
+            <strong>{{ b.title }}</strong>
+            <p>{{ b.content }}</p>
+            <img v-if="b.image_url" :src="resolveFileUrl(b.image_url)" alt="图片" class="review-img"/>
+          </div>
+          <div class="review-actions" v-if="reviewStatus === 'pending'">
+            <button class="approve" @click="approve(b)">通过</button>
+            <button class="reject" @click="reject(b)">驳回</button>
+          </div>
+        </li>
+      </ul>
+    </section>
   </div>
 </template>
 
@@ -135,7 +170,7 @@
  * - 整体蓝白色简洁风格
  */
 import { ref, computed, onMounted } from 'vue'
-import { surveyAPI } from '@/services/api.js'
+import { surveyAPI, shakeAdminAPI, resolveFileUrl } from '@/services/api.js'
 
 export default {
   name: 'Admin',
@@ -289,6 +324,52 @@ export default {
       window.addEventListener('beforeunload', () => clearInterval(timer))
     })
 
+    /**
+     * 祝福审核（后台）
+     * - 通过管理员令牌访问 /api/shake/admin/blessings 与 /api/shake/admin/blessing/:id/review
+     * - 仅用于内容审核；摇一摇仅检索审核通过的记录
+     */
+    const adminToken = ref(sessionStorage.getItem('admin-token') || '')
+    const reviewStatus = ref('pending') // 默认审核待处理
+    const blessPage = ref(1)
+    const blessPageSize = ref(10)
+    const blessings = ref([])
+
+    const saveAdminToken = () => {
+      sessionStorage.setItem('admin-token', adminToken.value)
+      // 保存后立即刷新列表
+      loadBlessings()
+    }
+
+    const loadBlessings = async () => {
+      try {
+        const resp = await shakeAdminAPI.listBlessings({ status: reviewStatus.value, page: blessPage.value, pageSize: blessPageSize.value, adminToken: adminToken.value })
+        blessings.value = Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp?.data?.data) ? resp.data.data : [])
+        console.info('[Admin] 已加载祝福审核列表', blessings.value.length)
+      } catch (e) {
+        console.error('[Admin] 加载祝福列表失败:', e?.message || e)
+        blessings.value = []
+      }
+    }
+
+    const approve = async (b) => {
+      try {
+        await shakeAdminAPI.reviewBlessing(b.id, 'approved', adminToken.value)
+        await loadBlessings()
+        alert(`已通过审核 #${b.id}`)
+      } catch (e) { alert(e?.message || '审核失败') }
+    }
+    const reject = async (b) => {
+      try {
+        await shakeAdminAPI.reviewBlessing(b.id, 'rejected', adminToken.value)
+        await loadBlessings()
+        alert(`已驳回 #${b.id}`)
+      } catch (e) { alert(e?.message || '驳回失败') }
+    }
+
+    // 初始尝试加载（若有令牌）
+    onMounted(() => { if (adminToken.value) loadBlessings() })
+
     return {
       kpis,
       recentList,
@@ -312,6 +393,18 @@ export default {
       maskPhone,
       openDetail,
       closeDetail,
+      // 审核区
+      adminToken,
+      reviewStatus,
+      blessPage,
+      blessPageSize,
+      blessings,
+      saveAdminToken,
+      loadBlessings,
+      approve,
+      reject,
+      // URL解析辅助：确保图片URL在生产/开发环境正确
+      resolveFileUrl,
     }
   }
 }
@@ -517,6 +610,26 @@ pre.answers, pre.ai {
 @media (max-width: 1200px) {
   .records { grid-template-columns: 1fr; }
 }
+
+/* 审核区域样式 */
+.review-section {
+  margin-top: 24px;
+  background: #ffffff;
+  border: 1px solid #e6eef7;
+  border-radius: 10px;
+  padding: 16px;
+}
+.review-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:12px; }
+.review-toolbar input { flex:1; padding:8px; border:1px solid #e6eef7; border-radius:8px; }
+.review-toolbar select, .review-toolbar button { padding:8px; border:1px solid #e6eef7; border-radius:8px; background:#f7fbff; }
+.review-list { list-style:none; margin:0; padding:0; }
+.review-item { border:1px solid #e6eef7; border-radius:8px; padding:12px; margin-bottom:10px; }
+.review-meta { display:flex; gap:10px; align-items:center; color:#6b7c93; font-size:12px; margin-bottom:6px; }
+.review-content { color:#2c3e50; }
+.review-img { max-width: 160px; max-height: 120px; object-fit: cover; border-radius:8px; border:1px solid #e6eef7; margin-top:6px; }
+.review-actions { margin-top:8px; display:flex; gap:8px; }
+.approve { background:#e8f9e8; color:#2e7d32; border:none; border-radius:8px; padding:8px 12px; cursor:pointer; }
+.reject { background:#fdecea; color:#c62828; border:none; border-radius:8px; padding:8px 12px; cursor:pointer; }
 
 @media (max-width: 900px) {
   .kpi-panel { grid-template-columns: repeat(2, 1fr); }

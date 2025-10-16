@@ -25,12 +25,15 @@ async function request(url, options = {}) {
     
     // 从options中移除timeout，避免传递给fetch
     const { timeout: _, ...fetchOptions } = options
-    
+    // 仅在非FormData时设置JSON头，避免multipart被错误覆盖
+    const isForm = fetchOptions.body instanceof FormData
+    const headers = {
+      ...(isForm ? {} : { 'Content-Type': 'application/json' }),
+      ...fetchOptions.headers
+    }
+
     const response = await fetch(`${API_BASE_URL}${url}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...fetchOptions.headers
-      },
+      headers,
       signal: controller.signal,
       ...fetchOptions
     })
@@ -257,6 +260,171 @@ export async function checkAPIConnection() {
   } catch (error) {
     console.warn('API连接失败:', error.message)
     return false
+  }
+}
+
+/**
+ * 摇一摇API服务
+ */
+export const shakeAPI = {
+  /** 设置或更新密码（按手机号） */
+  async setPassword(phone, password, oldPassword) {
+    // 传递新旧密码，后端会在已存在密码时要求原密码校验
+    return await request('/api/shake/password/set', {
+      method: 'POST',
+      body: JSON.stringify({ phone, password, oldPassword })
+    })
+  },
+  /** 验证密码（进入页面或发布前） */
+  async verifyPassword(phone, password) {
+    return await request('/api/shake/password/verify', {
+      method: 'POST',
+      body: JSON.stringify({ phone, password })
+    })
+  },
+  /** 发布祝福（需要密码通过） */
+  async createBlessing(payload) {
+    return await request('/api/shake/blessing', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  },
+  /** 上传主题图片（multipart） */
+  async uploadImage(file) {
+    const fd = new FormData()
+    fd.append('file', file)
+    return await request('/api/shake/upload/image', {
+      method: 'POST',
+      body: fd
+    })
+  },
+  /** 随机获取祝福 */
+  async randomBlessing(tag) {
+    const q = tag ? `?tag=${encodeURIComponent(tag)}` : ''
+    return await request(`/api/shake/blessing/random${q}`)
+  },
+  /** 点赞 */
+  async like(id) {
+    return await request(`/api/shake/blessing/${id}/like`, { method: 'POST' })
+  },
+  /** 赠章 */
+  async medal(id) {
+    return await request(`/api/shake/blessing/${id}/medal`, { method: 'POST' })
+  },
+  /** 获取/更新公益进度 */
+  async getProgress(phone) { return await request(`/api/shake/progress/${phone}`) },
+  async setProgress(phone, progress) {
+    return await request(`/api/shake/progress/${phone}`, {
+      method: 'POST',
+      body: JSON.stringify({ progress })
+    })
+  }
+}
+
+/**
+ * 摇一摇审核管理API（管理员）
+ * 使用自定义头 X-Admin-Token 进行简单鉴权
+ */
+export const shakeAdminAPI = {
+  /** 获取祝福列表（按状态分页） */
+  async listBlessings({ status = 'pending', tag = '', page = 1, pageSize = 20, adminToken }) {
+    const q = new URLSearchParams()
+    if (status) q.set('status', status)
+    if (tag) q.set('tag', tag)
+    q.set('page', String(page))
+    q.set('pageSize', String(pageSize))
+    return await request(`/api/shake/admin/blessings?${q.toString()}`, {
+      headers: { 'X-Admin-Token': adminToken || '' }
+    })
+  },
+  /** 更新审核状态 */
+  async reviewBlessing(id, status, adminToken) {
+    // 兼容性增强：同时通过 body、query 与自定义头传递 status，避免代理丢失请求体
+    const s = String(status || '').toLowerCase()
+    const url = `/api/shake/admin/blessing/${id}/review?status=${encodeURIComponent(s)}`
+    return await request(url, {
+      method: 'POST',
+      headers: { 'X-Admin-Token': adminToken || '', 'X-Status': s },
+      body: JSON.stringify({ status: s })
+    })
+  },
+  /** 获取祝福详情 */
+  async getBlessing(id, adminToken) {
+    return await request(`/api/shake/admin/blessing/${id}`, {
+      headers: { 'X-Admin-Token': adminToken || '' }
+    })
+  },
+  /** 删除祝福 */
+  async deleteBlessing(id, adminToken) {
+    return await request(`/api/shake/admin/blessing/${id}`, {
+      method: 'DELETE',
+      headers: { 'X-Admin-Token': adminToken || '' }
+    })
+  },
+  /** 批量审核 */
+  async reviewBulk(ids, status, adminToken) {
+    return await request(`/api/shake/admin/blessings/review-bulk`, {
+      method: 'POST',
+      headers: { 'X-Admin-Token': adminToken || '' },
+      body: JSON.stringify({ ids, status })
+    })
+  },
+  /** 管理员统计 */
+  async getStats(adminToken) {
+    return await request(`/api/shake/admin/stats`, {
+      headers: { 'X-Admin-Token': adminToken || '' }
+    })
+  },
+  /** 搜索祝福 */
+  async search({ q = '', status = '', page = 1, pageSize = 20, adminToken }) {
+    const p = new URLSearchParams()
+    if (q) p.set('q', q)
+    if (status) p.set('status', status)
+    p.set('page', String(page))
+    p.set('pageSize', String(pageSize))
+    return await request(`/api/shake/admin/search?${p.toString()}`, {
+      headers: { 'X-Admin-Token': adminToken || '' }
+    })
+  }
+}
+/**
+ * 解析文件URL为可访问的绝对地址
+ * - 若原始url为http(s)，直接返回
+ * - 若为相对路径（如/uploads/...），在开发环境使用 `VITE_PROXY_TARGET` 前缀；生产使用 `VITE_API_BASE_URL`
+ */
+export function resolveFileUrl(url) {
+  try {
+    if (!url) return ''
+    const isAbsolute = /^https?:\/\//i.test(url)
+    const dev = import.meta.env.DEV
+    const devBase = import.meta.env.VITE_PROXY_TARGET || ''
+    const prodBase = import.meta.env.VITE_API_BASE_URL || ''
+    const baseStr = dev ? devBase : prodBase
+
+    if (isAbsolute) {
+      // 处理后端返回的 localhost/127.0.0.1 绝对地址在生产环境下不可访问的问题
+      const u = new URL(url)
+      const b = baseStr ? new URL(baseStr) : null
+      // 若是上传静态路径（/uploads），统一按后端基址重写，保证端口正确
+      if (b && u.pathname.startsWith('/uploads')) {
+        const b = new URL(baseStr)
+        u.protocol = b.protocol
+        u.host = b.host
+        return u.toString()
+      }
+      // 若缺少端口，且我们有后端基址，补齐端口
+      if (b && !u.port && (!dev || u.hostname === b.hostname)) {
+        u.protocol = b.protocol
+        u.host = b.host
+        return u.toString()
+      }
+      return u.toString()
+    }
+    // 相对路径：拼接环境基址
+    if (!baseStr) return url
+    return new URL(url, baseStr).toString()
+  } catch (_) {
+    return url || ''
   }
 }
 

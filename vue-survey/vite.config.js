@@ -2,6 +2,9 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 
+// 允许通过环境变量切换代理目标（默认仍指向远端，便于生产预览；开发可设置 VITE_PROXY_TARGET=http://localhost:3001）
+const TARGET = process.env.VITE_PROXY_TARGET || 'http://82.157.38.149:3001'
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [vue()],
@@ -17,14 +20,14 @@ export default defineConfig({
     proxy: {
       // 代理API请求到后端服务
       '/api': {
-        target: 'http://82.157.38.149:3001',
+        target: TARGET,
         changeOrigin: true,
         // 保留原始路径
         rewrite: (path) => path
       },
       // 代理健康检查
       '/health': {
-        target: 'http://82.157.38.149:3001',
+        target: TARGET,
         changeOrigin: true,
         rewrite: (path) => path
       }

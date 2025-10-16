@@ -5,17 +5,22 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 // 配置dotenv从项目根目录加载.env文件
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 // 导入路由和工具
 const surveyRoutes = require('./routes/survey');
+// 新增：摇一摇路由（不影响原有survey功能）
+const shakeRoutes = require('./routes/shake');
 const { testConnection } = require('./config/database');
 const { initDatabase, checkConnection } = require('./utils/initDatabase');
 
 // 创建Express应用
 const app = express();
 const PORT = process.env.PORT || 3001;
+// 新增：是否启用无数据库模式（保持向后兼容，不改变默认行为）
+const DISABLE_DB = String(process.env.DISABLE_DB || 'false').toLowerCase() === 'true'
 
 /**
  * 中间件配置
@@ -39,6 +44,8 @@ app.use(cors({
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+  // 允许前端携带管理员令牌请求头
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Token'],
   exposedHeaders: ['Content-Length', 'Content-Type'],
   maxAge: 600 // 预检结果缓存10分钟
 }))
@@ -74,6 +81,21 @@ app.use((req, res, next) => {
 });
 
 /**
+ * 静态资源托管：用于用户上传的祝福主题图片
+ * - 路径：/uploads/blessings
+ * - 在服务器启动时确保目录存在
+ */
+try {
+  const uploadBase = path.join(__dirname, 'uploads');
+  const blessingsDir = path.join(uploadBase, 'blessings');
+  fs.mkdirSync(blessingsDir, { recursive: true });
+  app.use('/uploads', express.static(uploadBase));
+  console.log(`📁 静态上传目录已就绪: ${uploadBase}`);
+} catch (e) {
+  console.warn('⚠️ 初始化上传目录失败:', e.message);
+}
+
+/**
  * 路由配置
  */
 // 健康检查接口
@@ -98,6 +120,8 @@ app.get('/health', async (req, res) => {
 
 // API路由
 app.use('/api/survey', surveyRoutes);
+// 新增：挂载摇一摇模块API（路径前缀与survey保持一致为 /api/*）
+app.use('/api/shake', shakeRoutes);
 
 // 根路径
 app.get('/', (req, res) => {
@@ -135,60 +159,82 @@ app.use((error, req, res, next) => {
 });
 
 /**
- * 服务器启动函数
+ * 服务器启动函数（非阻塞启动）
+ * - 保持原有行为：HTTP服务优先启动
+ * - 新增后台DB检查/初始化，避免阻塞导致上游502
  */
 async function startServer() {
   try {
-    console.log('🚀 正在启动问卷系统后端服务器...');
-    
-    // 检查数据库连接
-    console.log('🔍 检查数据库连接...');
-    const dbConnected = await checkConnection();
-    
-    if (!dbConnected) {
-      console.log('⚠️  数据库未连接，尝试初始化数据库...');
-      await initDatabase();
-      console.log('✅ 数据库初始化完成');
-    } else {
-      console.log('✅ 数据库连接正常');
-    }
-    
-    // 启动服务器
-    const server = app.listen(PORT, '0.0.0.0',() => {
-      console.log(`\n🎉 服务器启动成功!`);
-      console.log(`📍 服务地址: http://localhost:${PORT}`);
-      console.log(`🏥 健康检查: http://localhost:${PORT}/health`);
-      console.log(`📋 API文档: http://localhost:${PORT}/`);
-      console.log(`🌍 环境: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`\n📡 API接口:`);
-      console.log(`   POST /api/survey/submit - 提交问卷`);
-      console.log(`   GET  /api/survey/:id - 查询问卷`);
-      console.log(`   GET  /api/survey/phone/:phone - 根据手机号查询`);
-      console.log(`   GET  /api/survey - 获取所有问卷（分页）`);
-      console.log(`   GET  /api/survey/stats/overview - 获取统计信息`);
-      console.log(`\n✨ 服务器就绪，等待请求...\n`);
-    });
-    
-    // 优雅关闭处理
+    console.log('🚀 正在启动问卷系统后端服务器...')
+
+    // 先启动服务器，避免因DB检查阻塞导致未监听端口
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      console.log(`\n🎉 服务器启动成功!`)
+      console.log(`📍 服务地址: http://localhost:${PORT}`)
+      console.log(`🏥 健康检查: http://localhost:${PORT}/health`)
+      console.log(`📋 API文档: http://localhost:${PORT}/`)
+      console.log(`🌍 环境: ${process.env.NODE_ENV || 'development'}`)
+      console.log(`🗄️  无数据库模式: ${DISABLE_DB ? '启用' : '禁用'}`)
+      console.log(`\n📡 API接口:`)
+      console.log(`   POST /api/survey/submit - 提交问卷`)
+      console.log(`   GET  /api/survey/:id - 查询问卷`)
+      console.log(`   GET  /api/survey/phone/:phone - 根据手机号查询`)
+      console.log(`   GET  /api/survey - 获取所有问卷（分页）`)
+      console.log(`   GET  /api/survey/stats/overview - 获取统计信息`)
+      console.log(`   POST /api/shake/password/set - 设置密码`)
+      console.log(`   POST /api/shake/password/verify - 验证密码`)
+      console.log(`   POST /api/shake/blessing - 发布祝福`)
+      console.log(`   GET  /api/shake/blessing/random - 随机祝福`)
+      console.log(`   POST /api/shake/blessing/:id/like - 点赞`)
+      console.log(`   POST /api/shake/blessing/:id/medal - 赠章`)
+      console.log(`   GET  /api/shake/progress/:phone - 获取公益进度`)
+      console.log(`   POST /api/shake/progress/:phone - 更新公益进度`)
+      console.log(`   GET  /api/shake/admin/blessings - 管理员获取祝福列表(需X-Admin-Token)`) 
+      console.log(`   POST /api/shake/admin/blessing/:id/review - 管理员更新审核状态(需X-Admin-Token)`) 
+      console.log(`\n✨ 服务器就绪，等待请求...\n`)
+    })
+
+    // 优雅关闭处理（保持原有逻辑）
     process.on('SIGTERM', () => {
-      console.log('\n🛑 收到SIGTERM信号，正在关闭服务器...');
-      server.close(() => {
-        console.log('✅ 服务器已关闭');
-        process.exit(0);
-      });
-    });
-    
+      console.log('\n🛑 收到SIGTERM信号，正在关闭服务器...')
+      server.close(() => { console.log('✅ 服务器已关闭'); process.exit(0) })
+    })
     process.on('SIGINT', () => {
-      console.log('\n🛑 收到SIGINT信号，正在关闭服务器...');
-      server.close(() => {
-        console.log('✅ 服务器已关闭');
-        process.exit(0);
-      });
-    });
-    
+      console.log('\n🛑 收到SIGINT信号，正在关闭服务器...')
+      server.close(() => { console.log('✅ 服务器已关闭'); process.exit(0) })
+    })
+
+    // 后台异步检查/初始化数据库（新增，避免阻塞）
+    setImmediate(async () => {
+      const withTimeout = (promise, ms, name = 'operation') => {
+        return Promise.race([
+          promise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error(`${name} timeout after ${ms}ms`)), ms))
+        ])
+      }
+
+      try {
+        if (DISABLE_DB) {
+          console.warn('⚠️  已启用无数据库模式(DISABLE_DB=true)，跳过数据库检查与初始化。')
+          return
+        }
+
+        console.log('🔍 后台检查数据库连接...')
+        const dbConnected = await withTimeout(checkConnection(), 5000, 'checkConnection')
+        if (dbConnected) {
+          console.log('✅ 数据库连接正常')
+        } else {
+          console.warn('⚠️  数据库未连接，尝试后台初始化...')
+          await withTimeout(initDatabase(), 15000, 'initDatabase')
+          console.log('✅ 数据库初始化完成')
+        }
+      } catch (e) {
+        console.warn(`⚠️  后台DB检查/初始化异常：${e.message}`)
+      }
+    })
   } catch (error) {
-    console.error('💥 服务器启动失败:', error.message);
-    process.exit(1);
+    console.error('💥 服务器启动失败:', error.message)
+    process.exit(1)
   }
 }
 

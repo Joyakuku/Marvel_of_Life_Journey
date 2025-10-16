@@ -77,6 +77,19 @@
               <span class="btn-text">开始评估</span>
             </button>
           </div>
+            
+            <!-- 新增：公益祝福摇一摇入口卡片 -->
+            <div class="feature-card">
+              <div class="feature-info">
+                <h2 class="feature-title">“臻”爱相传 · 公益祝福摇一摇</h2>
+                <p class="feature-desc">上传祝福语/语音，摇一摇随机匹配他人内容互动点赞，连续7天可解锁“公益传播使者”徽章。</p>
+              </div>
+              <div class="feature-actions">
+                <button class="feature-btn" @click="goShake">
+                  进入摇一摇
+                </button>
+              </div>
+            </div>
         </div>
       </section>
       
@@ -267,6 +280,11 @@ export default {
       router.push('/survey')
     }
 
+    const goShake = () => {
+      console.log('进入公益祝福摇一摇')
+      router.push('/shake')
+    }
+
     onMounted(() => {
       startAuto()
     })
@@ -289,7 +307,10 @@ export default {
       phoneError,
       isPhoneValid,
       validatePhone,
-      startSurvey
+      startSurvey,
+      
+      // 新增入口
+      goShake
     }
   }
 }
@@ -525,5 +546,16 @@ export default {
     padding: 14px 28px;
     font-size: 16px;
   }
+}
+
+/* 新增入口卡片样式 */
+.feature-card { margin-top: 24px; padding: 16px; border-radius: 12px; background: #ffffff; box-shadow: 0 8px 24px rgba(0,0,0,0.06); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.feature-title { font-size: 20px; color: #2c3e50; margin-bottom: 4px; }
+.feature-desc { color: #5a6c7d; }
+.feature-btn { padding: 10px 16px; background: #357abd; color: #fff; border: none; border-radius: 8px; cursor: pointer; }
+.feature-btn:hover { background: #2d679e; }
+
+@media (max-width: 768px) {
+  .feature-card { flex-direction: column; align-items: flex-start; }
 }
 </style>

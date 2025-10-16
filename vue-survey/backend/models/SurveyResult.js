@@ -244,6 +244,118 @@ class SurveyResult {
       throw new Error(`删除问卷结果失败: ${error.message}`);
     }
   }
+
+  /**
+   * 通过手机号更新摇一摇密码哈希
+   * 若该手机号不存在任何记录，则创建占位记录（保持问卷兼容，不影响问卷提交流程）
+   * @param {string} phone 手机号
+   * @param {string} passwordHash bcrypt哈希
+   * @returns {Promise<Object>} 更新结果
+   */
+  static async updatePasswordByPhone(phone, passwordHash) {
+    try {
+      // 先尝试更新现有记录（更新最新一条）
+      const updateSql = 'UPDATE survey_results SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE phone = ?';
+      const updateRes = await query(updateSql, [passwordHash, phone]);
+      if (updateRes.affectedRows > 0) {
+        return { success: true, message: '密码已更新(覆盖该手机号所有记录)' };
+      }
+      // 若不存在记录，则插入占位记录（最小必填字段），仅用于存储密码
+      const now = new Date();
+      const insertSql = `
+        INSERT INTO survey_results (
+          phone, answers, total_score, percentage, section1_score, section2_score, section3_score,
+          ai_analysis, start_time, end_time, password_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      const params = [
+        phone,
+        JSON.stringify({}),
+        0,
+        0,
+        0,
+        0,
+        0,
+        '',
+        now,
+        now,
+        passwordHash
+      ];
+      const resIns = await query(insertSql, params);
+      return { success: true, id: resIns.insertId, message: '已创建占位记录并设置密码' };
+    } catch (error) {
+      console.error('❌ 更新手机号密码失败:', error.message);
+      throw new Error(`更新手机号密码失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 获取手机号的密码哈希（取最新一条记录）
+   * @param {string} phone 手机号
+   * @returns {Promise<string|null>} 密码哈希或null
+   */
+  static async getPasswordHashByPhone(phone) {
+    try {
+      const sql = 'SELECT password_hash FROM survey_results WHERE phone = ? ORDER BY id DESC LIMIT 1';
+      const rows = await query(sql, [phone]);
+      if (!rows.length) return null;
+      return rows[0].password_hash || null;
+    } catch (error) {
+      console.error('❌ 查询手机号密码哈希失败:', error.message);
+      throw new Error(`查询手机号密码哈希失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 更新手机号关联的公益互动进度（JSON）
+   * @param {string} phone 手机号
+   * @param {Object} progress 进度对象
+   * @returns {Promise<Object>} 更新结果
+   */
+  static async updatePublicProgressByPhone(phone, progress) {
+    try {
+      const sql = 'UPDATE survey_results SET public_progress = ?, updated_at = CURRENT_TIMESTAMP WHERE phone = ?';
+      const res = await query(sql, [JSON.stringify(progress || {}), phone]);
+      if (res.affectedRows === 0) {
+        // 若无记录，则创建占位记录并写入进度
+        const now = new Date();
+        const insertSql = `
+          INSERT INTO survey_results (
+            phone, answers, total_score, percentage, section1_score, section2_score, section3_score,
+            ai_analysis, start_time, end_time, public_progress
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+        const params = [phone, JSON.stringify({}), 0, 0, 0, 0, 0, '', now, now, JSON.stringify(progress || {})];
+        const resIns = await query(insertSql, params);
+        return { success: true, id: resIns.insertId, message: '已创建占位记录并更新公益进度' };
+      }
+      return { success: true, message: '公益进度已更新' };
+    } catch (error) {
+      console.error('❌ 更新公益进度失败:', error.message);
+      throw new Error(`更新公益进度失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 获取手机号的公益互动进度（JSON）
+   * @param {string} phone 手机号
+   * @returns {Promise<Object|null>} 进度对象
+   */
+  static async getPublicProgressByPhone(phone) {
+    try {
+      const sql = 'SELECT public_progress FROM survey_results WHERE phone = ? ORDER BY id DESC LIMIT 1';
+      const rows = await query(sql, [phone]);
+      if (!rows.length) return null;
+      try {
+        return rows[0].public_progress ? JSON.parse(rows[0].public_progress) : null;
+      } catch (e) {
+        return null;
+      }
+    } catch (error) {
+      console.error('❌ 查询公益进度失败:', error.message);
+      throw new Error(`查询公益进度失败: ${error.message}`);
+    }
+  }
 }
 
 module.exports = SurveyResult;

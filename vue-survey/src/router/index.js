@@ -7,6 +7,7 @@ import Survey from '@/views/Survey.vue'
 import Result from '@/views/Result.vue'
 import Home from '@/views/Home.vue'
 import Admin from '@/views/Admin.vue'
+import BlessingShake from '@/views/BlessingShake.vue'
 
 /**
  * 路由配置数组
@@ -48,6 +49,15 @@ const routes = [
     meta: {
       title: '管理员后台',
       description: '问卷数据分析仪表盘'
+    }
+  },
+  {
+    path: '/shake',
+    name: 'BlessingShake',
+    component: BlessingShake,
+    meta: {
+      title: '公益祝福摇一摇',
+      description: '话语传递温暖的轻量化互动社区，上传祝福并摇一摇随机匹配。'
     }
   },
   {
