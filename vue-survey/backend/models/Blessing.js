@@ -194,6 +194,35 @@ class Blessing {
       throw new Error(`搜索祝福失败: ${error.message}`)
     }
   }
+
+  /**
+   * 按手机号分页获取祝福列表（包含所有审核状态）
+   * @param {string} phone 手机号
+   * @param {number} page 页码
+   * @param {number} pageSize 每页数量
+   * @returns {Promise<Array>} 祝福列表
+   */
+  static async listByPhone(phone, page = 1, pageSize = 20) {
+    try {
+      const pageInt = Math.max(1, parseInt(page, 10) || 1)
+      const pageSizeInt = Math.max(1, Math.min(100, parseInt(pageSize, 10) || 20))
+      const offsetInt = (pageInt - 1) * pageSizeInt
+
+      // 兼容部分MySQL环境对LIMIT/OFFSET占位符支持不一致的情况，使用安全数字内联
+      const sql = `
+        SELECT id, phone, title, tag, content, image_url, audio_url, review_status, likes, medals, created_at, updated_at
+        FROM blessings
+        WHERE phone = ?
+        ORDER BY created_at DESC
+        LIMIT ${pageSizeInt} OFFSET ${offsetInt}
+      `
+      const rows = await query(sql, [phone])
+      return rows
+    } catch (error) {
+      console.error('❌ 按手机号获取祝福列表失败:', error.message)
+      throw new Error(`按手机号获取祝福列表失败: ${error.message}`)
+    }
+  }
 }
 
 module.exports = Blessing

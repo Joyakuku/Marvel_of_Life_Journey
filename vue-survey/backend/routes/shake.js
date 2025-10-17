@@ -62,13 +62,23 @@ const upload = multer({
 })
 
 // 统一构造绝对地址（优先环境变量），避免代理/端口不一致导致资源不可访问
-function getBaseUrl() { return PUBLIC_BASE }
+function getBaseUrl(req) {
+  try {
+    const envBase = process.env.PUBLIC_BASE || (String(process.env.NODE_ENV).toLowerCase() === 'production' ? (process.env.VITE_API_BASE_URL || '') : '')
+    if (envBase) return envBase
+    const host = req.get('host') || 'localhost:3001'
+    const protocol = req.protocol || 'http'
+    return `${protocol}://${host}`
+  } catch (_) {
+    return 'http://localhost:3001'
+  }
+}
 
 router.post('/upload/image', upload.single('file'), (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: '未接收到文件' })
     const rel = `/uploads/blessings/${req.file.filename}`
-    const base = getBaseUrl()
+    const base = getBaseUrl(req)
     const abs = new URL(rel, base).toString()
     logger.info('[Upload] 图片上传成功', { base, abs, file: req.file.filename })
     return res.json({ success: true, data: { url: rel, absolute: abs } })
@@ -183,11 +193,36 @@ router.post('/blessing', async (req, res) => {
         updated_at: now
       }
       memoryBlessings.push(row)
-      return res.json({ success:true, message:'发布成功(内存)', data: { id: row.id } })
+      // 发布成功后：原子递增今日上传次数，并记录活动日期
+      const fmtToday = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'
+      })
+      const todayKey = fmtToday.format(now)
+      const progress = memoryProgress.get(phone) || {}
+      const duc = (progress.dailyUploadCount && typeof progress.dailyUploadCount === 'object') ? progress.dailyUploadCount : {}
+      const ad = Array.isArray(progress.activityDates) ? progress.activityDates : []
+      duc[todayKey] = Number(duc[todayKey] || 0) + 1
+      if (!ad.includes(todayKey)) ad.push(todayKey)
+      progress.dailyUploadCount = duc
+      progress.activityDates = ad
+      memoryProgress.set(phone, progress)
+      return res.json({ success:true, message:'发布成功(内存)', data: { id: row.id, todayKey, todayUploadCount: duc[todayKey] } })
     }
 
     const result = await Blessing.create({ phone, title, tag, content, image_url, audio_url })
-    return res.json({ success:true, message:'发布成功', data: result })
+    // 发布成功后：原子递增今日上传次数（DB）
+    try {
+      const inc = await SurveyResult.incrementPublicUploadByPhone(phone)
+      logger.info('发布后原子递增上传(DB)', {
+        phoneMasked: String(phone).replace(/(\d{3})\d{4}(\d{4})/, '$1****$2'),
+        todayKey: inc.todayKey,
+        todayUploadCount: inc.todayUploadCount
+      })
+      return res.json({ success:true, message:'发布成功', data: { ...result, todayKey: inc.todayKey, todayUploadCount: inc.todayUploadCount } })
+    } catch (e) {
+      logger.warn('发布成功但上传计数递增失败(DB)', { error: e.message })
+      return res.json({ success:true, message:'发布成功(上传计数未更新)', data: result })
+    }
   } catch (e) {
     logger.error('发布祝福失败', { error: e.message })
     res.status(500).json({ success:false, message:'服务器内部错误' })
@@ -212,6 +247,32 @@ router.get('/blessing/random', async (req, res) => {
     return res.json({ success:true, data })
   } catch (e) {
     logger.error('随机获取失败', { error: e.message })
+    res.status(500).json({ success:false, message:'服务器内部错误' })
+  }
+})
+
+/** 按手机号分页获取祝福列表（我的祝福） */
+router.get('/blessings/phone/:phone', async (req, res) => {
+  try {
+    const { phone } = req.params
+    const { page = 1, pageSize = 20 } = req.query
+    if (!validPhone(phone)) return res.status(400).json({ success:false, message:'手机号码格式不正确' })
+
+    if (USE_MEMORY) {
+      const p = Math.max(1, Number(page) || 1)
+      const ps = Math.max(1, Math.min(100, Number(pageSize) || 20))
+      const offset = (p - 1) * ps
+      const list = memoryBlessings
+        .filter(b => String(b.phone) === String(phone))
+        .sort((a,b) => new Date(b.created_at) - new Date(a.created_at))
+      const pageList = list.slice(offset, offset + ps)
+      return res.json({ success:true, data: pageList })
+    }
+
+    const rows = await Blessing.listByPhone(phone, Number(page) || 1, Number(pageSize) || 20)
+    return res.json({ success:true, data: rows })
+  } catch (e) {
+    logger.error('按手机号获取祝福列表失败', { error: e.message })
     res.status(500).json({ success:false, message:'服务器内部错误' })
   }
 })
@@ -262,15 +323,93 @@ router.post('/blessing/:id/medal', async (req, res) => {
 router.get('/progress/:phone', async (req, res) => {
   try {
     const { phone } = req.params
-    if (!validPhone(phone)) return res.status(400).json({ success:false, message:'手机号码格式不正确' })
-
-    if (USE_MEMORY) {
-      const progress = memoryProgress.get(phone) || null
-      return res.json({ success:true, data: progress })
+    if (!validPhone(phone)) {
+      logger.warn('进度查询失败：手机号格式不正确', { phoneMasked: String(phone || '').replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') })
+      return res.status(400).json({ success:false, message:'手机号码格式不正确' })
     }
 
-    const progress = await SurveyResult.getPublicProgressByPhone(phone)
-    return res.json({ success:true, data: progress })
+    // 统一返回带有派生字段的进度对象
+    const computeDerived = (progressRaw) => {
+      const progress = progressRaw && typeof progressRaw === 'object' ? progressRaw : {}
+      const activityDates = Array.isArray(progress.activityDates) ? progress.activityDates.slice().sort() : []
+      const dailyShakeCount = progress.dailyShakeCount && typeof progress.dailyShakeCount === 'object' ? progress.dailyShakeCount : {}
+      const dailyUploadCount = progress.dailyUploadCount && typeof progress.dailyUploadCount === 'object' ? progress.dailyUploadCount : {}
+
+      // 今天的日期键（Asia/Shanghai 时区，与前端本地日期键一致）
+      const fmt = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'
+      })
+      const todayKey = fmt.format(new Date())
+      const todayShakeCount = Number(dailyShakeCount[todayKey] || 0)
+
+      // 计算连续参与天数（从今天起向前回溯，直到断开）
+      const dateSet = new Set(activityDates)
+      let streak = 0
+      for (let i = 0; i < 366; i++) { // 最多回溯一年，避免无限循环
+        const key = fmt.format(new Date(Date.now() - i * 86400000))
+        if (dateSet.has(key)) streak++
+        else break
+      }
+
+      const streakDays = Number.isFinite(progress.streakDays) ? Number(progress.streakDays) : streak
+      const badgeUnlocked = Boolean(progress.badgeUnlocked || streakDays >= 7)
+
+      return {
+        ...progress,
+        activityDates,
+        dailyShakeCount,
+        dailyUploadCount,
+        streakDays,
+        badgeUnlocked,
+        todayShakeCount
+      }
+    }
+
+    // 进度摘要，避免日志过大
+    const summarizeProgress = (p = {}) => {
+      const keys = Object.keys(p || {})
+      const adLen = Array.isArray(p.activityDates) ? p.activityDates.length : 0
+      const dsDays = p.dailyShakeCount && typeof p.dailyShakeCount === 'object' ? Object.keys(p.dailyShakeCount).length : 0
+      const duDays = p.dailyUploadCount && typeof p.dailyUploadCount === 'object' ? Object.keys(p.dailyUploadCount).length : 0
+      return {
+        keys,
+        activityDatesCount: adLen,
+        dailyShakeDaysCount: dsDays,
+        dailyUploadDaysCount: duDays,
+        streakDays: Number(p.streakDays || 0),
+        badgeUnlocked: !!p.badgeUnlocked
+      }
+    }
+
+    if (USE_MEMORY) {
+      const raw = memoryProgress.get(phone) || {}
+      logger.info('GET 进度(内存)', {
+        phoneMasked: String(phone).replace(/(\d{3})\d{4}(\d{4})/, '$1****$2'),
+        rawSummary: summarizeProgress(raw)
+      })
+      const enriched = computeDerived(raw)
+      logger.info('GET 进度派生(内存)', {
+        phoneMasked: String(phone).replace(/(\d{3})\d{4}(\d{4})/, '$1****$2'),
+        streakDays: enriched.streakDays,
+        todayShakeCount: enriched.todayShakeCount,
+        badgeUnlocked: enriched.badgeUnlocked
+      })
+      return res.json({ success:true, data: enriched })
+    }
+
+    const raw = await SurveyResult.getPublicProgressByPhone(phone)
+    logger.info('GET 进度(DB)', {
+      phoneMasked: String(phone).replace(/(\d{3})\d{4}(\d{4})/, '$1****$2'),
+      rawSummary: summarizeProgress(raw || {})
+    })
+    const enriched = computeDerived(raw)
+    logger.info('GET 进度派生(DB)', {
+      phoneMasked: String(phone).replace(/(\d{3})\d{4}(\d{4})/, '$1****$2'),
+      streakDays: enriched.streakDays,
+      todayShakeCount: enriched.todayShakeCount,
+      badgeUnlocked: enriched.badgeUnlocked
+    })
+    return res.json({ success:true, data: enriched })
   } catch (e) {
     logger.error('获取进度失败', { error: e.message })
     res.status(500).json({ success:false, message:'服务器内部错误' })
@@ -281,17 +420,82 @@ router.post('/progress/:phone', async (req, res) => {
   try {
     const { phone } = req.params
     const progress = req.body?.progress || {}
-    if (!validPhone(phone)) return res.status(400).json({ success:false, message:'手机号码格式不正确' })
+    if (!validPhone(phone)) {
+      logger.warn('进度更新失败：手机号格式不正确', { phoneMasked: String(phone || '').replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') })
+      return res.status(400).json({ success:false, message:'手机号码格式不正确' })
+    }
+
+      const fmtToday = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'
+      })
+      const todayKey = fmtToday.format(new Date())
+    const summary = {
+      keys: Object.keys(progress || {}),
+      activityDatesCount: Array.isArray(progress.activityDates) ? progress.activityDates.length : 0,
+      todayShakeCount: (progress.dailyShakeCount && progress.dailyShakeCount[todayKey]) ? Number(progress.dailyShakeCount[todayKey]) : 0,
+      todayUploadCount: (progress.dailyUploadCount && progress.dailyUploadCount[todayKey]) ? Number(progress.dailyUploadCount[todayKey]) : 0,
+      streakDays: Number(progress.streakDays || 0),
+      badgeUnlocked: !!progress.badgeUnlocked
+    }
+    logger.info('POST 进度接收', {
+      phoneMasked: String(phone).replace(/(\d{3})\d{4}(\d{4})/, '$1****$2'),
+      summary
+    })
 
     if (USE_MEMORY) {
       memoryProgress.set(phone, progress)
+      logger.info('POST 进度保存(内存)', {
+        phoneMasked: String(phone).replace(/(\d{3})\d{4}(\d{4})/, '$1****$2'),
+        saved: true
+      })
       return res.json({ success:true, data: { mode: 'memory', saved: true } })
     }
 
     const result = await SurveyResult.updatePublicProgressByPhone(phone, progress)
+    logger.info('POST 进度保存(DB)', {
+      phoneMasked: String(phone).replace(/(\d{3})\d{4}(\d{4})/, '$1****$2'),
+      result
+    })
     return res.json({ success:true, data: result })
   } catch (e) {
     logger.error('更新进度失败', { error: e.message })
+    res.status(500).json({ success:false, message:'服务器内部错误' })
+  }
+})
+
+/** 今日摇一摇计数原子 +1（按手机号） */
+router.post('/progress/:phone/shake', async (req, res) => {
+  try {
+    const { phone } = req.params
+    if (!validPhone(phone)) {
+      logger.warn('进度递增失败：手机号格式不正确', { phoneMasked: String(phone || '').replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') })
+      return res.status(400).json({ success:false, message:'手机号码格式不正确' })
+    }
+
+    // 按上海时区生成今日键
+    const fmtToday = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'
+    })
+    const todayKey = fmtToday.format(new Date())
+
+    if (USE_MEMORY) {
+      const progress = memoryProgress.get(phone) || {}
+      const dsc = (progress.dailyShakeCount && typeof progress.dailyShakeCount === 'object') ? progress.dailyShakeCount : {}
+      const ad = Array.isArray(progress.activityDates) ? progress.activityDates : []
+      dsc[todayKey] = Number(dsc[todayKey] || 0) + 1
+      if (!ad.includes(todayKey)) ad.push(todayKey)
+      progress.dailyShakeCount = dsc
+      progress.activityDates = ad
+      memoryProgress.set(phone, progress)
+      logger.info('POST 进度原子+1(内存)', { phoneMasked: String(phone).replace(/(\d{3})\d{4}(\d{4})/, '$1****$2'), todayKey, todayShakeCount: dsc[todayKey] })
+      return res.json({ success:true, data: { mode: 'memory', todayKey, todayShakeCount: dsc[todayKey] } })
+    }
+
+    const result = await SurveyResult.incrementPublicShakeByPhone(phone)
+    logger.info('POST 进度原子+1(DB)', { phoneMasked: String(phone).replace(/(\d{3})\d{4}(\d{4})/, '$1****$2'), todayKey: result.todayKey, todayShakeCount: result.todayShakeCount })
+    return res.json({ success:true, data: { todayKey: result.todayKey, todayShakeCount: result.todayShakeCount } })
+  } catch (e) {
+    logger.error('进度原子+1失败', { error: e.message })
     res.status(500).json({ success:false, message:'服务器内部错误' })
   }
 })
@@ -485,6 +689,3 @@ router.get('/admin/search', requireAdminToken, async (req, res) => {
 })
 
 module.exports = router
-// 强制使用固定的后端基址（按用户要求写死，不读取环境变量）
-// 说明：若未来迁移域名或端口，请手动修改此常量。
-const PUBLIC_BASE = 'http://82.157.38.149:3001'

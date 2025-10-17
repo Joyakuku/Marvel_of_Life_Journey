@@ -337,6 +337,72 @@ class SurveyResult {
   }
 
   /**
+   * 原子地为今天的摇一摇计数 +1，并确保 activityDates 包含今天
+   * @param {string} phone 手机号
+   * @returns {Promise<Object>} 更新结果
+   */
+  static async incrementPublicShakeByPhone(phone) {
+    try {
+      // 统一按上海时区计算今天键，和路由逻辑保持一致
+      const fmt = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'
+      })
+      const todayKey = fmt.format(new Date())
+
+      // 读取当前进度
+      const current = await this.getPublicProgressByPhone(phone)
+      const progress = current && typeof current === 'object' ? JSON.parse(JSON.stringify(current)) : {}
+      const dailyShakeCount = progress.dailyShakeCount && typeof progress.dailyShakeCount === 'object' ? progress.dailyShakeCount : {}
+      const activityDates = Array.isArray(progress.activityDates) ? progress.activityDates.slice() : []
+
+      dailyShakeCount[todayKey] = Number(dailyShakeCount[todayKey] || 0) + 1
+      if (!activityDates.includes(todayKey)) activityDates.push(todayKey)
+
+      progress.dailyShakeCount = dailyShakeCount
+      progress.activityDates = activityDates
+
+      // 写回
+      const result = await this.updatePublicProgressByPhone(phone, progress)
+      return { success: true, todayKey, todayShakeCount: dailyShakeCount[todayKey], result }
+    } catch (error) {
+      console.error('❌ 原子递增今日摇一摇计数失败:', error.message)
+      throw new Error(`原子递增失败: ${error.message}`)
+    }
+  }
+  /**
+   * 原子地为今天的上传计数 +1，并确保 activityDates 包含今天
+   * @param {string} phone 手机号
+   * @returns {Promise<Object>} 更新结果
+   */
+  static async incrementPublicUploadByPhone(phone) {
+    try {
+      // 统一按上海时区计算今天键
+      const fmt = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'
+      })
+      const todayKey = fmt.format(new Date())
+
+      // 读取当前进度
+      const current = await this.getPublicProgressByPhone(phone)
+      const progress = current && typeof current === 'object' ? JSON.parse(JSON.stringify(current)) : {}
+      const dailyUploadCount = progress.dailyUploadCount && typeof progress.dailyUploadCount === 'object' ? progress.dailyUploadCount : {}
+      const activityDates = Array.isArray(progress.activityDates) ? progress.activityDates.slice() : []
+
+      dailyUploadCount[todayKey] = Number(dailyUploadCount[todayKey] || 0) + 1
+      if (!activityDates.includes(todayKey)) activityDates.push(todayKey)
+
+      progress.dailyUploadCount = dailyUploadCount
+      progress.activityDates = activityDates
+
+      // 写回
+      const result = await this.updatePublicProgressByPhone(phone, progress)
+      return { success: true, todayKey, todayUploadCount: dailyUploadCount[todayKey], result }
+    } catch (error) {
+      console.error('❌ 原子递增今日上传计数失败:', error.message)
+      throw new Error(`原子递增失败: ${error.message}`)
+    }
+  }
+  /**
    * 获取手机号的公益互动进度（JSON）
    * @param {string} phone 手机号
    * @returns {Promise<Object|null>} 进度对象
@@ -346,11 +412,20 @@ class SurveyResult {
       const sql = 'SELECT public_progress FROM survey_results WHERE phone = ? ORDER BY id DESC LIMIT 1';
       const rows = await query(sql, [phone]);
       if (!rows.length) return null;
-      try {
-        return rows[0].public_progress ? JSON.parse(rows[0].public_progress) : null;
-      } catch (e) {
-        return null;
+      const raw = rows[0].public_progress;
+      // 兼容不同MySQL驱动/版本对JSON列的返回：可能是字符串、对象或Buffer
+      if (raw === null || raw === undefined) return null;
+      if (typeof raw === 'string') {
+        try { return JSON.parse(raw); } catch (_) { return null; }
       }
+      if (Buffer.isBuffer(raw)) {
+        try { return JSON.parse(raw.toString('utf8')); } catch (_) { return null; }
+      }
+      if (typeof raw === 'object') {
+        // 已是对象，直接返回
+        return raw;
+      }
+      return null;
     } catch (error) {
       console.error('❌ 查询公益进度失败:', error.message);
       throw new Error(`查询公益进度失败: ${error.message}`);

@@ -2,34 +2,51 @@
   <div class="shake-container">
     <!-- 头部介绍移除：页面仅保留摇一摇模块与装瓶入口 -->
 
-    <!-- 密码弹窗 -->
+    <!-- 身份弹窗：登录/注册/改密 三态 -->
     <div v-if="showPwdModal" class="modal-backdrop">
-      <div class="modal">
-        <h3>进入摇一摇需设置/验证密码</h3>
+      <div class="modal auth-modal">
+        <h3 v-if="authMode==='login'">登陆</h3>
+        <h3 v-else-if="authMode==='register'">注册账号（设置密码）</h3>
+        <h3 v-else>更改密码</h3>
+
         <div class="row">
           <label>手机号</label>
           <input v-model="phone" placeholder="请输入11位手机号" />
         </div>
-        <div class="row">
+
+        <div class="row" v-if="authMode!=='register'">
           <label>密码</label>
           <input v-model="password" type="password" placeholder="至少4位" />
         </div>
-        <div class="row">
+
+        <div class="row" v-if="authMode!=='login'">
           <label>新密码</label>
-          <input v-model="newPassword" type="password" placeholder="至少4位 新密码（如已设置过密码需填写）" />
+          <input v-model="newPassword" type="password" placeholder="至少4位 新密码" />
         </div>
+
         <div class="actions">
-          <button @click="doVerify">验证密码</button>
-          <button @click="doSet">设置密码</button>
+          <button v-if="authMode==='login'" @click="doVerify">登录</button>
+          <button v-else-if="authMode==='register'" @click="doRegister">注册</button>
+          <button v-else @click="doChangePassword">更改密码</button>
         </div>
-        <p class="tip">说明：问卷无需密码；公益摇一摇需要密码以保障互动安全。若已设置过密码，修改时需输入原密码与新密码。</p>
+
+        <!-- 右下角“更多”按钮：展开注册与改密选项 -->
+        <button class="more-btn" @click="toggleMore" title="注册/更改密码">⋯</button>
+        <div v-if="showMore" class="more-menu" role="menu">
+          <button class="link-btn" @click="authMode='register'; showMore=false" role="menuitem">注册</button>
+          <button class="link-btn" @click="authMode='change'; showMore=false" role="menuitem">更改密码</button>
+          <button class="link-btn" @click="authMode='login'; showMore=false" role="menuitem">返回登录</button>
+        </div>
+
+        
       </div>
     </div>
 
     <!-- 发布祝福弹窗：复用改造前的发布模块（装瓶） -->
     <div v-if="showPublishModal" class="modal-backdrop">
       <div class="modal">
-        <h3>发布我的祝福（装瓶）</h3>
+        <h3>发布我的祝福</h3>
+        <p v-if="openedByGate" class="gate-tip">今天尚未发送祝福，请先发布一次，随后即可进行摇一摇。</p>
         <div class="form-row">
           <label class="label">选择标签</label>
           <div class="tags">
@@ -80,17 +97,89 @@
 
     <!-- 摇一摇互动区域 -->
     <section class="shake-section">
-      <h2 class="shake-title">爱心摇一摇
-        <button class="bottle-btn" @click="openPublishModal" title="装瓶">🍾</button>
+      <h2 class="shake-title">“髓”爱摇一摇
+        <button class="bottle-btn" @click="openPublishModal" title="装瓶">装瓶</button>
+        <!-- 右上角汉堡菜单按钮 -->
+        <button class="hamburger-btn" @click="toggleMenu" title="菜单">☰</button>
       </h2>
       <div class="shake-panel" @click="manualShake" :aria-label="'点击或摇动手机触发匹配'">
-        <div class="phone" :class="{ shake: isShaking }">
-          <div class="screen">摇一摇</div>
+        <div class="bottle-container" :class="{ shake: isShaking }">
+          <!-- 瓶子背景图片 -->
+          <img src="@/assets/images/bottle.png" alt="爱心瓶子" class="bottle-image" />
+          <!-- 爱心动画层 -->
+          <div class="hearts-overlay">
+            <img src="@/assets/images/heart.png" alt="爱心" class="heart h1" />
+            <img src="@/assets/images/heart.png" alt="爱心" class="heart h2" />
+            <img src="@/assets/images/heart.png" alt="爱心" class="heart h3" />
+            <img src="@/assets/images/heart.png" alt="爱心" class="heart h4" />
+            <img src="@/assets/images/heart.png" alt="爱心" class="heart h5" />
+            <img src="@/assets/images/heart.png" alt="爱心" class="heart h6" />
+            <img src="@/assets/images/heart.png" alt="爱心" class="heart h7" />
+            <img src="@/assets/images/heart.png" alt="爱心" class="heart h8" />
+            <img src="@/assets/images/heart.png" alt="爱心" class="heart h9" />
+            <img src="@/assets/images/heart.png" alt="爱心" class="heart h10" />
+            <img src="@/assets/images/heart.png" alt="爱心" class="heart h11" />
+            <img src="@/assets/images/heart.png" alt="爱心" class="heart h12" />
+          </div>
         </div>
-        <p class="shake-tip">移动端摇动手机触发匹配；桌面端点击卡片模拟</p>
+        <p class="shake-hint">摇一摇手机或点击触发</p>
       </div>
       
     </section>
+    <!-- 右侧抽屉：徽章进度 + 我的祝福 -->
+    <div v-if="showMenu" class="drawer-backdrop" @click.self="showMenu=false">
+      <div class="drawer">
+        <div class="drawer-header">
+          <strong>我的公益</strong>
+          <button class="close-btn" @click="showMenu=false">×</button>
+        </div>
+        <div class="drawer-tabs">
+          <button class="tab-btn" :class="{active: menuTab==='progress'}" @click="menuTab='progress'">徽章进度</button>
+          <button class="tab-btn" :class="{active: menuTab==='mine'}" @click="menuTab='mine'">我的祝福</button>
+        </div>
+        <div class="drawer-body">
+          <!-- 徽章进度 -->
+          <div v-if="menuTab==='progress'">
+            <div class="badge" :class="{ unlocked: badgeUnlocked }">
+              <span class="icon">🎖️</span>
+              <div>
+                <div class="title">七日连击徽章</div>
+                <div class="streak-tip">{{ badgeUnlocked ? '已解锁' : '累计连续7天参与可解锁' }}</div>
+              </div>
+            </div>
+          <div class="progress-cloud" v-if="cloudProgress">
+            <h4>进度</h4>
+            <div class="stat-row"><span>连续参与天数</span><strong>{{ cloudProgress.streakDays || 0 }}</strong></div>
+            <div class="stat-row"><span>今日摇一摇次数</span><strong>{{ cloudProgress.todayShakeCount || 0 }}</strong></div>
+            <div class="stat-row"><span>云端徽章</span><strong>{{ cloudProgress.badgeUnlocked ? '已解锁' : '未解锁' }}</strong></div>
+          </div>
+            <p v-else class="hint">登录后将自动展示云端进度。</p>
+          </div>
+          <!-- 我的祝福列表 -->
+          <div v-else>
+            <div v-if="myBlessingsLoading" class="loading">正在加载…</div>
+            <div v-else-if="myBlessingsError" class="error">加载失败：{{ myBlessingsError }} <button class="retry-btn" @click="reloadBlessings">重试</button></div>
+            <div v-else-if="!phone">请先登录后查看</div>
+            <div v-else-if="!myBlessings.length" class="empty">暂时还没有发布记录</div>
+            <div v-else class="blessing-list">
+              <div v-for="b in myBlessings" :key="b.id" class="blessing-item">
+                <div class="row1">
+                  <span class="tag-pill">{{ b.tag || '公益祝福' }}</span>
+                  <span class="status" :class="b.review_status">{{ statusLabel(b.review_status) }}</span>
+                </div>
+                <div class="content">{{ b.content }}</div>
+                <img v-if="b.image_url" :src="resolveFileUrl(b.image_url)" alt="预览" />
+                <div class="row2">
+                  <span>👍 {{ b.likes || 0 }}</span>
+                  <span>🎖️ {{ b.medals || 0 }}</span>
+                  <span class="date">{{ formatDate(new Date(b.created_at).getTime()) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     <!-- 当日互动内容弹窗（摇一摇结果） -->
     <div v-if="showMatchModal && currentMatch" class="modal-backdrop">
       <div class="modal">
@@ -145,6 +234,8 @@ export default {
     // 弹窗控制：发布与匹配结果
     const showPublishModal = ref(false)
     const showMatchModal = ref(false)
+    // 门禁提示：由摇一摇或点击瓶子触发时显示
+    const openedByGate = ref(false)
     // 提示音
     let audioCtx = null
     // 全新：统一摇一摇模块
@@ -157,9 +248,8 @@ export default {
       onShake: () => {
         // 摇动检测通过后，走门禁再弹窗
         if (!verified.value) { showPwdModal.value = true; return }
-        const today = todayStr()
-        const hasUpload = (state.dailyUploadCount[today] || 0) > 0
-        if (!hasUpload) { showPublishModal.value = true; return }
+        // 使用云端同步的发布检测
+        if (!hasPublishedToday()) { openedByGate.value = true; showPublishModal.value = true; return }
         handleMatch(); showMatchModal.value = true
       }
     })
@@ -183,27 +273,116 @@ export default {
       badgeUnlocked: false
     })
 
+    /** 汉堡菜单与抽屉数据 **/
+    const showMenu = ref(false)
+    const menuTab = ref('progress') // progress | mine
+    const myBlessings = ref([])
+    const myBlessingsLoading = ref(false)
+    const myBlessingsError = ref('')
+    const cloudProgress = ref(null)
+    const todayShakeCount = computed(() => {
+      const todayKey = todayStr()
+      const cloud = cloudProgress.value
+      const cloudVal = cloud ? (Number((cloud.dailyShakeCount || {})[todayKey] || cloud.todayShakeCount || 0)) : 0
+      return cloudVal
+    })
+    const statusLabel = (s) => ({ approved: '已通过', pending: '审核中', rejected: '未通过' }[String(s||'pending')] || '审核中')
+    const toggleMenu = async () => {
+      showMenu.value = !showMenu.value
+      if (showMenu.value) await loadMenuData()
+    }
+    const loadMenuData = async () => {
+      try {
+        if (!phone.value) return
+        // 云端进度
+        try {
+          const p = await shakeAPI.getProgress(phone.value)
+          console.info('[Cloud] 拉取进度返回', {
+            phoneMasked: String(phone.value || '').replace(/(\d{3})\d{4}(\d{4})/, '$1****$2'),
+            success: !!p?.success,
+            hasData: !!p?.data,
+            summary: {
+              streakDays: Number(p?.data?.streakDays || 0),
+              todayShakeCount: Number(p?.data?.todayShakeCount || 0),
+              badgeUnlocked: !!p?.data?.badgeUnlocked,
+              activityDatesCount: Array.isArray(p?.data?.activityDates) ? p.data.activityDates.length : 0
+            }
+          })
+          cloudProgress.value = p?.data || null
+          if (cloudProgress.value) {
+            const todayKey = todayStr()
+            const todayCloudShake = Number((cloudProgress.value.dailyShakeCount || {})[todayKey] || cloudProgress.value.todayShakeCount || 0)
+            console.info('[Cloud] 解析云端进度', {
+              todayKey,
+              todayShakeCount: todayCloudShake,
+              streakDays: Number(cloudProgress.value.streakDays || 0),
+              badgeUnlocked: !!cloudProgress.value.badgeUnlocked
+            })
+          }
+        } catch (_) { cloudProgress.value = null }
+        // 我的祝福
+        myBlessingsError.value = ''
+        myBlessingsLoading.value = true
+        const res = await shakeAPI.listBlessingsByPhone(phone.value, 1, 50)
+        myBlessings.value = Array.isArray(res?.data) ? res.data : []
+      } catch (e) {
+        console.warn('加载菜单数据失败', e)
+        myBlessingsError.value = e?.message || '未知错误'
+      } finally {
+        myBlessingsLoading.value = false
+      }
+    }
+    /**
+     * 独立的云端进度刷新（用于门禁与挂载后的同步）
+     */
+    const refreshCloudProgress = async () => {
+      try {
+        if (!phone.value) return
+        const p = await shakeAPI.getProgress(phone.value)
+        cloudProgress.value = p?.data || null
+        const todayKey = todayStr()
+        const todayCloudUpload = Number((cloudProgress.value?.dailyUploadCount || {})[todayKey] || cloudProgress.value?.todayUploadCount || 0)
+        console.info('[Cloud] 刷新门禁进度', { todayKey, todayCloudUpload })
+      } catch (e) {
+        console.warn('[Cloud] 刷新进度失败', e?.message || e)
+      }
+    }
+    const reloadBlessings = async () => {
+      if (!phone.value) return
+      myBlessingsError.value = ''
+      myBlessingsLoading.value = true
+      try {
+        const res = await shakeAPI.listBlessingsByPhone(phone.value, 1, 50)
+        myBlessings.value = Array.isArray(res?.data) ? res.data : []
+      } catch (e) {
+        myBlessingsError.value = e?.message || '未知错误'
+      } finally {
+        myBlessingsLoading.value = false
+      }
+    }
+
     /** 加载/保存 **/
     const loadState = () => {
-      try {
-        const raw = localStorage.getItem(LS_KEY)
-        if (raw) Object.assign(state, JSON.parse(raw))
-        console.log('[Shake] 加载状态', state)
-      } catch (e) { console.warn('加载失败', e) }
-      // 卫生处理：移除本地池中未审核内容，确保回退只展示已批准示例
-      try {
-        if (Array.isArray(state.pool)) {
-          const before = state.pool.length
-          state.pool = state.pool.filter(item => item && item.approved === true)
-          const after = state.pool.length
-          if (before !== after) console.warn('[Shake] 已清理未审核本地内容', { before, after })
-        }
-      } catch (_) {}
-      // 若池为空，注入示例数据
+      // 禁止载入本地缓存：一切以云端为准
+      // 保留示例池注入，避免后端无数据时界面为空
       if (!state.pool || state.pool.length === 0) seedSamples()
     }
     const saveState = () => {
-      try { localStorage.setItem(LS_KEY, JSON.stringify(state)) } catch (e) {}
+      // 禁止写入本地缓存
+    }
+
+    /**
+     * 云端同步发布检测
+     * - 规则：本地今日发布次数>0 或 云端记录的今日发布次数>0 或 云端活动日期包含今日
+     * - 目的：不同设备登录同一账号时，共享“是否已发布”门禁状态
+     */
+    const hasPublishedToday = () => {
+      // 仅以云端为准：云端今日发布>0 或 活动日期包含今日
+      const todayKey = todayStr()
+      const cp = cloudProgress.value || null
+      const cloudCount = Number(((cp && cp.dailyUploadCount) ? cp.dailyUploadCount[todayKey] : 0) || cp?.todayUploadCount || 0)
+      const cloudActive = Array.isArray(cp?.activityDates) && cp.activityDates.includes(todayKey)
+      return (cloudCount > 0) || cloudActive
     }
 
     /**
@@ -286,7 +465,14 @@ export default {
     }
 
     /** 工具函数 **/
-    const todayStr = () => new Date().toISOString().slice(0, 10)
+    // 生成本地时区日期键（YYYY-MM-DD），避免 UTC 切日导致的早晨归入前一天
+    const dateKeyLocal = (date) => {
+      const y = date.getFullYear()
+      const m = String(date.getMonth() + 1).padStart(2, '0')
+      const d = String(date.getDate()).padStart(2, '0')
+      return `${y}-${m}-${d}`
+    }
+    const todayStr = () => dateKeyLocal(new Date())
     const sid = () => `${Date.now()}_${Math.random().toString(16).slice(2)}`
     const formatDate = (ts) => new Date(ts).toLocaleDateString()
 
@@ -328,60 +514,67 @@ export default {
     /** 密码与身份校验（摇一摇专用，不影响问卷） */
      const store = useSurveyStore()
      const phone = ref(store.userPhone || '')
-     const password = ref('') // 旧密码（用于验证/修改）
-     const newPassword = ref('') // 新密码（用于修改）
+     const password = ref('') // 登录或改密时的旧密码
+     const newPassword = ref('') // 注册或改密时的新密码
      const showPwdModal = ref(true)
      const verified = ref(false)
+     const authMode = ref('login') // login | register | change
+     const showMore = ref(false)
+     const toggleMore = () => { showMore.value = !showMore.value }
  
      // 将公益互动进度同步到后端（按手机号聚合）
-     const persistProgress = async () => {
-       try {
-         const progress = {
-           activityDates: state.activityDates,
-           likes: state.likes,
-           medals: state.medals,
-           streakDays: streakDays.value,
-           badgeUnlocked: badgeUnlocked.value
-         }
-         if (phone.value) await shakeAPI.setProgress(phone.value, progress)
-       } catch (e) {
-         console.warn('同步公益进度失败', e)
-       }
-     }
+    const persistProgress = async () => {
+      // 禁止通过整块写入覆盖云端进度，改为仅依赖后端原子接口更新
+    }
  
-     const doVerify = async () => {
-       try {
-         if (!/^1[3-9]\d{9}$/.test(phone.value)) { alert('请输入有效手机号'); return }
-         const res = await shakeAPI.verifyPassword(phone.value, password.value)
-         if (res.success) {
-           verified.value = true
-           showPwdModal.value = false
-           // 验证成功后保存会话，刷新后免登
-           saveAuthSession()
-           await persistProgress()
-         }
-         else { alert(res.message || '密码错误') }
-       } catch (e) { alert(e.message || '验证失败') }
-     }
- 
-     const doSet = async () => {
-       try {
-         if (!/^1[3-9]\d{9}$/.test(phone.value)) { alert('请输入有效手机号'); return }
-         if (!newPassword.value || newPassword.value.length < 4) { alert('新密码至少4位'); return }
-       // 设置新密码；若已存在旧密码，后端将要求并校验 oldPassword（password）
-       const res = await shakeAPI.setPassword(phone.value, newPassword.value, password.value)
+    const doVerify = async () => {
+      try {
+        if (!/^1[3-9]\d{9}$/.test(phone.value)) { alert('请输入有效手机号'); return }
+        const res = await shakeAPI.verifyPassword(phone.value, password.value)
         if (res.success) {
           verified.value = true
           showPwdModal.value = false
-          // 设置成功后立即保存会话，刷新后免登
-          // 会话密码更新为新密码
-          password.value = newPassword.value
+          // 验证成功后保存会话，刷新后免登
           saveAuthSession()
-          await persistProgress()
-          newPassword.value = ''
+          await refreshCloudProgress()
         }
-        else { alert(res.message || '设置失败') }
-      } catch (e) { alert(e.message || '设置失败') }
+        else { alert(res.message || '密码错误') }
+      } catch (e) { alert(e.message || '验证失败') }
+    }
+    const doRegister = async () => {
+      try {
+        if (!/^1[3-9]\d{9}$/.test(phone.value)) { alert('请输入有效手机号'); return }
+        if (!newPassword.value || newPassword.value.length < 4) { alert('密码至少4位'); return }
+        const res = await shakeAPI.setPassword(phone.value, newPassword.value, null)
+        if (res.success) {
+          // 注册成功即视为已验证并进入
+          password.value = newPassword.value
+          verified.value = true
+          showPwdModal.value = false
+          saveAuthSession()
+          await refreshCloudProgress()
+          newPassword.value = ''
+        } else { alert(res.message || '注册失败') }
+      } catch (e) { alert(e.message || '注册失败') }
+    }
+
+     const doChangePassword = async () => {
+       try {
+         if (!/^1[3-9]\d{9}$/.test(phone.value)) { alert('请输入有效手机号'); return }
+         if (!password.value || password.value.length < 4) { alert('请输入当前密码（至少4位）'); return }
+         if (!newPassword.value || newPassword.value.length < 4) { alert('新密码至少4位'); return }
+         const res = await shakeAPI.setPassword(phone.value, newPassword.value, password.value)
+         if (res.success) {
+           password.value = newPassword.value
+           verified.value = true
+          showPwdModal.value = false
+          saveAuthSession()
+          // 更改密码不触发本地进度写回，避免覆盖云端
+          await refreshCloudProgress()
+          newPassword.value = ''
+          alert('密码已更改')
+        } else { alert(res.message || '更改失败') }
+      } catch (e) { alert(e.message || '更改失败') }
     }
  
     /**
@@ -392,14 +585,9 @@ export default {
     const submitBlessing = async () => {
       if (!verified.value) { showPwdModal.value = true; return }
       const date = todayStr()
-      const count = state.dailyUploadCount[date] || 0
-      // 取消发布次数限制：仅记录次数用于“今日已装瓶”判断
-      // 不再将未审核内容加入本地回退池，避免摇一摇发现未审核内容
+      // 本地上传计数不再影响云端，云端更新由后端负责
       const payload = { id: sid(), tag: form.tag, text: form.text.trim(), image: form.image, audioUrl: form.audioUrl, date: Date.now(), approved: false }
-       state.uploads.unshift(payload)
-       state.dailyUploadCount[date] = count + 1
-       markActiveToday()
-       saveState()
+      state.uploads.unshift(payload)
        try {
          await shakeAPI.createBlessing({
            phone: phone.value,
@@ -414,9 +602,11 @@ export default {
        form.text = ''
        form.audioUrl = null
        showPublishModal.value = false
-       console.log('[Publish] 发布完成，今日允许摇一摇')
+       console.log('[Publish] 发布完成，云端进度将由后端原子更新')
        // 说明：需管理员审核通过后才会被摇一摇匹配到
        alert('发布成功！内容已提交审核，通过后将进入公益祝福池供摇一摇发现')
+       // 刷新云端进度以便门禁与展示
+       await refreshCloudProgress()
     }
  
      /** 语音录制 **/
@@ -445,15 +635,15 @@ export default {
       }
     }
 
-    /** 发布状态校验：当天是否已装瓶（至少发布一次） */
-    const canShakeToday = computed(() => (state.dailyUploadCount[todayStr()] || 0) > 0)
+    /** 发布状态校验：当天是否已装瓶（至少发布一次） - 支持云端同步 */
+    const canShakeToday = computed(() => hasPublishedToday())
 
     /** 摇一摇匹配（手动点击卡片） */
     const manualShake = async () => {
       initAudio()
       await shake.ensureAccess()
       if (!verified.value) { showPwdModal.value = true; return }
-      if (!canShakeToday.value) { showPublishModal.value = true; return }
+      if (!canShakeToday.value) { openedByGate.value = true; showPublishModal.value = true; return }
       await handleMatch(); showMatchModal.value = true
     }
     const handleMatch = async () => {
@@ -495,9 +685,22 @@ export default {
         currentMatch.value = pool[idx]
       } finally {
         const date = todayStr()
-        state.dailyShakeCount[date] = (state.dailyShakeCount[date] || 0) + 1
-        markActiveToday()
-        saveState()
+        try {
+          if (verified.value && phone.value) {
+            const inc = await shakeAPI.incrementShake(phone.value)
+            const serverCount = Number(inc?.data?.todayShakeCount || 0)
+            // 同步本地为云端值（仅用于临时展示，不写入本地缓存）
+            state.dailyShakeCount[date] = serverCount
+            console.info('[Shake] 今日摇一摇计数 +1(云端)', { date, after: serverCount })
+            await refreshCloudProgress()
+          } else {
+            // 未验证不再进行本地计数或云端写入
+            console.warn('[Shake] 未验证用户，跳过计数')
+          }
+        } catch (e) {
+          // 云端为准：失败不进行本地回退与写回
+          console.warn('[Shake] 云端递增失败，保持云端为准', e?.message || e)
+        }
       }
     }
 
@@ -535,21 +738,18 @@ export default {
       checkBadge()
     }
     const streakDays = computed(() => {
-      // 计算截至今天的连续天数
-      const dates = [...state.activityDates].sort()
-      if (dates.length === 0) return 0
-      const today = new Date(todayStr())
-      let streak = 0
-      for (let i = 0; i < 14; i++) { // 最多回溯两周
-        const d = new Date(today)
-        d.setDate(today.getDate() - i)
-        const key = d.toISOString().slice(0, 10)
-        if (dates.includes(key)) streak++
-        else break
+      // 仅以云端为准
+      if (cloudProgress.value && Number.isFinite(cloudProgress.value.streakDays)) {
+        return Number(cloudProgress.value.streakDays)
       }
-      return streak
+      return 0
     })
-    const badgeUnlocked = computed(() => state.badgeUnlocked || streakDays.value >= 7)
+    const badgeUnlocked = computed(() => {
+      if (cloudProgress.value && typeof cloudProgress.value.badgeUnlocked === 'boolean') {
+        return !!cloudProgress.value.badgeUnlocked
+      }
+      return false
+    })
     const checkBadge = () => { if (streakDays.value >= 7) state.badgeUnlocked = true }
 
     // 统一解析匹配内容的图片/音频URL，确保端口与域名正确
@@ -570,7 +770,9 @@ export default {
     onMounted(() => {
       // 刷新后先恢复登录会话，再加载互动状态
       restoreAuthSession()
-      loadState()
+      loadState() // 不再读取localStorage，仅注入示例池
+      // 挂载后根据当前会话拉取云端进度，用于门禁同步
+      try { if (phone.value) refreshCloudProgress() } catch (_) {}
       // 环境无需权限（安卓等）可直接开始；iOS 需在用户交互时 ensureAccess
       try { shake.start() } catch (e) {}
     })
@@ -594,7 +796,7 @@ export default {
       currentMatch,
       showPublishModal,
       showMatchModal,
-      openPublishModal: () => { if (!verified.value) { showPwdModal.value = true; return } showPublishModal.value = true },
+      openPublishModal: () => { if (!verified.value) { showPwdModal.value = true; return } openedByGate.value = false; showPublishModal.value = true },
       // 移除“开启传感器”与自检相关导出，仅保留核心交互
       shake,
       matchImageSrc,
@@ -608,14 +810,34 @@ export default {
       // 进度与徽章
       streakDays,
       badgeUnlocked,
+      todayShakeCount,
       formatDate,
-      // 密码弹窗相关
+      // 身份弹窗相关
       phone,
       password,
+      newPassword,
       showPwdModal,
+      authMode,
+      showMore,
+      toggleMore,
       doVerify,
-      doSet
-      ,newPassword
+      doRegister,
+      doChangePassword
+      ,
+      // 菜单
+      showMenu,
+      menuTab,
+      toggleMenu,
+      myBlessings,
+      myBlessingsLoading,
+      myBlessingsError,
+      cloudProgress,
+      statusLabel,
+      // 解析资源URL
+      resolveFileUrl,
+      reloadBlessings,
+      // 门禁提示标记
+      openedByGate
     }
   }
 }
@@ -626,6 +848,8 @@ export default {
 .shake-title { display:flex; align-items:center; gap:8px; }
 .bottle-btn { padding:4px 8px; border:none; border-radius:8px; background:#fff3cd; color:#856404; cursor:pointer; font-size:16px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
 .bottle-btn:hover { filter: brightness(0.98); }
+.hamburger-btn { margin-left:auto; padding:6px 10px; border:none; border-radius:8px; background:#f1f3f5; color:#333; cursor:pointer; }
+.hamburger-btn:hover{ filter:brightness(0.98) }
 
 .upload-section, .shake-section, .streak-section { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 6px 16px rgba(0,0,0,0.06); margin-bottom: 16px; }
 .upload-section h2, .shake-section h2, .streak-section h2 { font-size: 20px; margin-bottom: 12px; }
@@ -661,12 +885,81 @@ export default {
 .uploading { color:#856404; font-size:12px; margin-top:4px; }
 
 /* 摇一摇样式 */
-.shake-panel { display:flex; align-items:center; justify-content:center; gap:12px; background:#f8fbff; border:1px dashed #cfe0fb; border-radius:12px; padding:16px; cursor:pointer; }
-.phone { width:140px; height:240px; border:12px solid #333; border-radius:24px; background:#111; display:flex; align-items:center; justify-content:center; }
-.phone .screen { width:100%; height:100%; background:#0f2b57; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; letter-spacing:4px; }
-.phone.shake { animation: shake 0.7s linear; }
-@keyframes shake { 0%{transform:rotate(0)} 20%{transform:rotate(-8deg)} 40%{transform:rotate(8deg)} 60%{transform:rotate(-6deg)} 80%{transform:rotate(6deg)} 100%{transform:rotate(0)} }
-.shake-tip { color:#6c757d; font-size:12px; }
+.shake-section { position: fixed; inset: 0; display: flex; flex-direction: column; padding: 16px; background: #f8fbff; border-radius: 0; box-shadow: none; margin-bottom: 0; }
+.shake-panel { flex: 1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; background:#f8fbff; border:none; border-radius:12px; padding:16px; cursor:pointer; }
+
+/* 瓶子容器 - 使用图片 */
+.bottle-container {
+  position: relative;
+  width: clamp(200px, 25vw, 300px);
+  height: clamp(300px, 35vw, 450px);
+  animation: bottle-sway 6s ease-in-out infinite;
+}
+
+.bottle-container.shake {
+  animation: shake-strong .7s linear;
+}
+
+.bottle-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 20px rgba(0,0,0,0.1));
+}
+
+/* 爱心动画层 */
+.hearts-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.heart {
+  position: absolute;
+  width: clamp(72px, 12vw, 108px); /* 再次放大图片宽度（两倍） */
+  height: clamp(72px, 12vw, 108px); /* 再次放大图片高度（两倍） */
+  animation: bob 3s ease-in-out infinite;
+  filter: drop-shadow(0 2px 4px rgba(255,107,157,0.3)); /* 添加阴影效果 */
+  object-fit: contain; /* 保持图片比例 */
+}
+
+/* 爱心位置分布 - 模拟瓶中填充效果，整体向左上角移动 */
+.heart.h1 { top: 15%; left: 20%; animation-delay: 0s; }
+.heart.h2 { top: 25%; left: 50%; animation-delay: 0.3s; }
+.heart.h3 { top: 35%; left: 15%; animation-delay: 0.6s; }
+.heart.h4 { top: 45%; left: 60%; animation-delay: 0.9s; }
+.heart.h5 { top: 55%; left: 30%; animation-delay: 1.2s; }
+.heart.h6 { top: 20%; left: 35%; animation-delay: 1.5s; }
+.heart.h7 { top: 30%; left: 40%; animation-delay: 1.8s; }
+.heart.h8 { top: 40%; left: 25%; animation-delay: 2.1s; }
+.heart.h9 { top: 50%; left: 45%; animation-delay: 2.4s; }
+.heart.h10 { top: 60%; left: 20%; animation-delay: 2.7s; }
+.heart.h11 { top: 65%; left: 55%; animation-delay: 3.0s; }
+.heart.h12 { top: 70%; left: 35%; animation-delay: 0.5s; }
+
+/* 动画关键帧 */
+@keyframes bottle-sway {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-2deg); }
+  75% { transform: rotate(2deg); }
+}
+
+@keyframes bob {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes shake-strong {
+  0% { transform: rotate(0deg); }
+  20% { transform: rotate(-8deg); }
+  40% { transform: rotate(8deg); }
+  60% { transform: rotate(-6deg); }
+  80% { transform: rotate(6deg); }
+  100% { transform: rotate(0deg); }
+}
 
 .match-card { margin-top:12px; border:1px solid #e9ecef; border-radius:12px; padding:12px; }
 .match-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
@@ -692,10 +985,50 @@ export default {
 }
 .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:999}
 .modal{width:92%;max-width:420px;background:#fff;border-radius:12px;box-shadow:0 10px 24px rgba(0,0,0,0.12);padding:16px}
+.auth-modal{position:relative}
 .modal h3{margin:0 0 8px;font-size:18px;color:#2c3e50}
 .modal .row{margin:8px 0}
 .modal input{width:100%;padding:8px;border:1px solid #e9ecef;border-radius:8px}
 .modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
 .modal .actions button{padding:8px 12px;border:none;border-radius:8px;background:#357abd;color:#fff;cursor:pointer}
-.modal .tip{font-size:12px;color:#6c757d;margin-top:8px}
+.modal .tip{display:none}
+.gate-tip{margin:8px 0;padding:8px;border:1px solid #ffeeba;background:#fff3cd;color:#856404;border-radius:8px;font-size:14px}
+/* 瓶子下方提示文案 */
+.shake-hint{margin-top:8px;color:#6c757d;font-size:13px;text-align:center}
+/* 移除按钮点击时的蓝色聚焦边框 */
+.shake-container button { -webkit-tap-highlight-color: transparent; }
+.shake-container button:focus,
+.shake-container button:focus-visible,
+.shake-container button:active { outline: none; box-shadow: none; }
+.more-btn{position:absolute;right:12px;top:12px;border:none;background:#f1f3f5;color:#333;border-radius:8px;padding:6px 10px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.06)}
+.more-btn:hover{filter:brightness(0.98)}
+.more-menu{position:absolute;right:12px;top:48px;background:#fff;border:1px solid #e9ecef;border-radius:10px;box-shadow:0 6px 16px rgba(0,0,0,0.1);padding:8px;display:flex;flex-direction:column;gap:6px}
+.link-btn{padding:6px 10px;border:none;border-radius:8px;background:#f8f9fa;color:#333;cursor:pointer;text-align:left}
+.link-btn:hover{background:#eef2f7}
+
+/* 右侧抽屉样式 */
+.drawer-backdrop{position:fixed;inset:0;display:flex;justify-content:flex-end;background:rgba(0,0,0,.25);z-index:998}
+.drawer{width:min(92%,360px);height:100%;background:#fff;border-left:1px solid #e9ecef;box-shadow:-6px 0 16px rgba(0,0,0,0.08);padding:12px;display:flex;flex-direction:column}
+.drawer-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.close-btn{border:none;background:#f1f3f5;border-radius:8px;padding:6px 10px;cursor:pointer}
+.drawer-tabs{display:flex;gap:8px;margin-bottom:8px}
+.tab-btn{padding:6px 10px;border:1px solid #e9ecef;border-radius:8px;background:#f8f9fa;cursor:pointer}
+.tab-btn.active{background:#4a90e2;color:#fff;border-color:#357abd}
+.drawer-body{flex:1;overflow:auto}
+.stat-row{display:flex;justify-content:space-between;align-items:center;border-bottom:1px dashed #e9ecef;padding:8px 0}
+.loading{color:#6c757d}
+.error{padding:12px;color:#c92a2a;background:#fff5f5;border:1px solid #ffc9c9;border-radius:8px}
+.retry-btn{margin-left:8px;padding:4px 8px;border:none;border-radius:6px;background:#f1f3f5;color:#333;cursor:pointer}
+.retry-btn:hover{filter:brightness(0.98)}
+.empty{color:#6c757d}
+.blessing-list{display:flex;flex-direction:column;gap:8px}
+.blessing-item{border:1px solid #e9ecef;border-radius:10px;padding:8px}
+.blessing-item .row1{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.blessing-item .content{color:#2c3e50;margin-bottom:6px}
+.blessing-item img{width:100%;max-height:160px;object-fit:cover;border-radius:8px;background:#f8f9fa}
+.status{font-size:12px;color:#6c757d}
+.status.approved{color:#2f9e44}
+.status.pending{color:#f08c00}
+.status.rejected{color:#c92a2a}
+
 </style>

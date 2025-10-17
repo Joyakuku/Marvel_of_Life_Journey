@@ -303,6 +303,13 @@ export const shakeAPI = {
     const q = tag ? `?tag=${encodeURIComponent(tag)}` : ''
     return await request(`/api/shake/blessing/random${q}`)
   },
+  /** 按手机号获取祝福列表（我的祝福） */
+  async listBlessingsByPhone(phone, page = 1, pageSize = 20) {
+    const p = new URLSearchParams()
+    p.set('page', String(page))
+    p.set('pageSize', String(pageSize))
+    return await request(`/api/shake/blessings/phone/${phone}?${p.toString()}`)
+  },
   /** 点赞 */
   async like(id) {
     return await request(`/api/shake/blessing/${id}/like`, { method: 'POST' })
@@ -311,13 +318,53 @@ export const shakeAPI = {
   async medal(id) {
     return await request(`/api/shake/blessing/${id}/medal`, { method: 'POST' })
   },
+  /** 今日摇一摇计数 原子 +1 */
+  async incrementShake(phone) {
+    const phoneMasked = String(phone || '').replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+    console.info('[ShakeAPI] incrementShake ->', { phoneMasked })
+    const resp = await request(`/api/shake/progress/${phone}/shake`, { method: 'POST' })
+    console.info('[ShakeAPI] incrementShake <-', { phoneMasked, success: !!resp?.success, todayKey: resp?.data?.todayKey, todayShakeCount: resp?.data?.todayShakeCount })
+    return resp
+  },
   /** 获取/更新公益进度 */
-  async getProgress(phone) { return await request(`/api/shake/progress/${phone}`) },
+  async getProgress(phone) {
+    const phoneMasked = String(phone || '').replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+    console.info('[ShakeAPI] getProgress ->', { phoneMasked })
+    const resp = await request(`/api/shake/progress/${phone}`)
+    console.info('[ShakeAPI] getProgress <-', {
+      phoneMasked,
+      success: !!resp?.success,
+      hasData: !!resp?.data,
+      summary: {
+        streakDays: Number(resp?.data?.streakDays || 0),
+        todayShakeCount: Number(resp?.data?.todayShakeCount || 0),
+        badgeUnlocked: !!resp?.data?.badgeUnlocked,
+      }
+    })
+    return resp
+  },
   async setProgress(phone, progress) {
-    return await request(`/api/shake/progress/${phone}`, {
+    const phoneMasked = String(phone || '').replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+      const _now = new Date()
+      const todayKey = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-${String(_now.getDate()).padStart(2, '0')}`
+    console.info('[ShakeAPI] setProgress ->', {
+      phoneMasked,
+      summary: {
+        keys: Object.keys(progress || {}),
+        activityDatesCount: Array.isArray(progress?.activityDates) ? progress.activityDates.length : 0,
+        todayKey,
+        todayShakeCount: Number((progress?.dailyShakeCount || {})[todayKey] || 0),
+        todayUploadCount: Number((progress?.dailyUploadCount || {})[todayKey] || 0),
+        streakDays: Number(progress?.streakDays || 0),
+        badgeUnlocked: !!progress?.badgeUnlocked
+      }
+    })
+    const resp = await request(`/api/shake/progress/${phone}`, {
       method: 'POST',
       body: JSON.stringify({ progress })
     })
+    console.info('[ShakeAPI] setProgress <-', { phoneMasked, success: !!resp?.success })
+    return resp
   }
 }
 
@@ -402,21 +449,22 @@ export function resolveFileUrl(url) {
     const baseStr = dev ? devBase : prodBase
 
     if (isAbsolute) {
-      // 处理后端返回的 localhost/127.0.0.1 绝对地址在生产环境下不可访问的问题
       const u = new URL(url)
       const b = baseStr ? new URL(baseStr) : null
-      // 若是上传静态路径（/uploads），统一按后端基址重写，保证端口正确
-      if (b && u.pathname.startsWith('/uploads')) {
-        const b = new URL(baseStr)
-        u.protocol = b.protocol
-        u.host = b.host
-        return u.toString()
-      }
-      // 若缺少端口，且我们有后端基址，补齐端口
-      if (b && !u.port && (!dev || u.hostname === b.hostname)) {
-        u.protocol = b.protocol
-        u.host = b.host
-        return u.toString()
+      const isLocalHost = (h) => h === 'localhost' || h === '127.0.0.1'
+      if (b) {
+        // 仅在原始为本地地址时重写为基址，避免把远端图片误指到本地
+        if (isLocalHost(u.hostname)) {
+          u.protocol = b.protocol
+          u.host = b.host
+          return u.toString()
+        }
+        // 若缺少端口且与基址同域，则补齐端口
+        if (!u.port && u.hostname === b.hostname) {
+          u.protocol = b.protocol
+          u.host = b.host
+          return u.toString()
+        }
       }
       return u.toString()
     }

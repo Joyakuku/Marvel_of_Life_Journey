@@ -11,17 +11,23 @@
       >
         <div
           class="slides"
-          :style="{ transform: `translateX(-${currentIndex * slideWidthPercent}%)`, width: `${images.length * 100}%` }"
+          :style="{ transform: `translate3d(-${currentIndex * slideWidthPercent}%, 0, 0)`, width: `${images.length * 100}%` }"
         >
           <!-- 使用真实图片资源 -->
           <div v-for="(img, idx) in images" :key="idx" class="slide" :style="{ flex: `0 0 ${slideWidthPercent}%` }">
             <img
+              v-if="isLoaded(idx)"
               class="slide-img"
               :src="img"
               :alt="`宣传图 ${idx + 1}`"
               :loading="idx === 0 ? 'eager' : 'lazy'"
+              :fetchpriority="idx === 0 ? 'high' : 'low'"
               decoding="async"
+              width="2275"
+              height="1280"
+              @load="onImgLoad(idx)"
             />
+            <div v-else class="slide-placeholder" aria-hidden="true"></div>
           </div>
         </div>
 
@@ -67,48 +73,46 @@
             </div>
           </div>
           
-          <div class="cta-area">
-            <button 
-              @click="startSurvey" 
-              class="start-btn"
-              :disabled="!isPhoneValid"
-              :class="{ disabled: !isPhoneValid }"
-            >
-              <span class="btn-text">开始评估</span>
-            </button>
-          </div>
+      <div class="cta-area">
+        <button 
+          @click="startSurvey" 
+          class="start-btn"
+          :disabled="!isPhoneValid"
+          :class="{ disabled: !isPhoneValid }"
+        >
+          <span class="btn-text">开始评估</span>
+        </button>
+        <button
+          @click="goShake"
+          class="shake-btn"
+          aria-label="进入爱心摇一摇"
+          title="进入爱心摇一摇"
+        >
+          <span class="btn-text">爱心摇一摇</span>
+        </button>
+      </div>
             
-            <!-- 新增：公益祝福摇一摇入口卡片 -->
-            <div class="feature-card">
-              <div class="feature-info">
-                <h2 class="feature-title">“臻”爱相传 · 公益祝福摇一摇</h2>
-                <p class="feature-desc">上传祝福语/语音，摇一摇随机匹配他人内容互动点赞，连续7天可解锁“公益传播使者”徽章。</p>
-              </div>
-              <div class="feature-actions">
-                <button class="feature-btn" @click="goShake">
-                  进入摇一摇
-                </button>
-              </div>
-            </div>
+            <!-- 新增：公益祝福摇一摇简介卡片（入口改为页脚翻页） -->
         </div>
       </section>
       
-
+      <!-- 已移除页脚页角入口，改为上方美观按钮 -->
       
     </main>
   </div>
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSurveyStore } from '@/stores/survey'
+// 移除翻页相关：不再需要UI过渡控制或快照翻页
 // 引入真实图片资源（Vite将进行哈希与优化）
-import img1 from '@/assets/images/image1.jpg'
-import img2 from '@/assets/images/image2.jpg'
-import img3 from '@/assets/images/image3.jpg'
-import img4 from '@/assets/images/image4.jpg'
-import img5 from '@/assets/images/image5.jpg'
+import img1 from '@/assets/images/image1.webp'
+import img2 from '@/assets/images/image2.webp'
+import img3 from '@/assets/images/image3.webp'
+import img4 from '@/assets/images/image4.webp'
+import img5 from '@/assets/images/image5.webp'
 
 /**
  * 首页组件
@@ -135,6 +139,27 @@ export default {
     /** 定时器句柄 */
     let timer = null
 
+    // 按需渲染：仅首屏加载第一张，其余通过预取与空白占位减少初始开销
+    const loadedSet = reactive(new Set([0]))
+    const isLoaded = (idx) => loadedSet.has(idx)
+    const markLoaded = (idx) => { loadedSet.add(idx) }
+    const onImgLoad = (idx) => markLoaded(idx)
+    const prefetchIndex = (idx) => {
+      if (idx == null) return
+      const n = ((idx % totalSlides) + totalSlides) % totalSlides
+      if (loadedSet.has(n)) return
+      const url = images[n]
+      const im = new Image()
+      // 低优先级获取，避免与首屏资源竞争
+      try { im.fetchPriority = 'low' } catch {}
+      im.src = url
+      im.onload = () => markLoaded(n)
+      // 尝试在解码完成后再标记，减少首次切换时闪烁
+      if (im.decode) {
+        im.decode().then(() => markLoaded(n)).catch(() => {})
+      }
+    }
+
     /**
      * 启动自动轮播
      * 使用setInterval避免递归调用，mouseenter时暂停、mouseleave时继续
@@ -144,6 +169,8 @@ export default {
       timer = setInterval(() => {
         currentIndex.value = (currentIndex.value + 1) % totalSlides
         console.debug('[Carousel] 切换到索引:', currentIndex.value)
+        // 预取下一张，确保轮播到达前已解码
+        prefetchIndex(currentIndex.value + 1)
       }, intervalMs)
     }
 
@@ -166,6 +193,8 @@ export default {
       currentIndex.value = idx
       pauseAuto()
       setTimeout(() => resumeAuto(), 0)
+      // 预取目标的下一张，提升手动切换后体验
+      prefetchIndex(idx + 1)
     }
 
     // 响应式数据（原有逻辑）
@@ -280,13 +309,23 @@ export default {
       router.push('/survey')
     }
 
+    /**
+     * 右下页脚入口：切换过渡为翻页后导航到摇一摇
+     * 使用UI Store设置过渡名，App.vue接收到后进行翻页动画并在进入后重置
+     */
     const goShake = () => {
-      console.log('进入公益祝福摇一摇')
+      console.log('[Home] 入口触发：进入爱心摇一摇（无翻页过渡）')
       router.push('/shake')
     }
 
     onMounted(() => {
       startAuto()
+      // 首次空闲时预取第二张与第三张，兼顾性能与体验
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(() => { prefetchIndex(1); prefetchIndex(2) })
+      } else {
+        setTimeout(() => { prefetchIndex(1); prefetchIndex(2) }, 0)
+      }
     })
 
     onUnmounted(() => {
@@ -301,6 +340,8 @@ export default {
       resumeAuto,
       goTo,
       slideWidthPercent,
+      isLoaded,
+      onImgLoad,
       
       // 原有表单相关
       phoneNumber,
@@ -309,7 +350,7 @@ export default {
       validatePhone,
       startSurvey,
       
-      // 新增入口
+      // 爱心摇一摇入口（美观按钮）
       goShake
     }
   }
@@ -377,6 +418,7 @@ export default {
   /* width: 500%; */
   height: 100%;
   transition: transform 500ms ease;
+  will-change: transform;
 }
 
 .slide {
@@ -392,6 +434,12 @@ export default {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+.slide-placeholder {
+  width: 100%;
+  height: 100%;
+  background: #f5f9ff;
 }
 
 .indicators {
@@ -497,6 +545,8 @@ export default {
 .cta-area {
   display: flex;
   justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .start-btn {
@@ -527,6 +577,29 @@ export default {
   cursor: not-allowed;
 }
 
+/* 次入口：爱心摇一摇（更美观） */
+.shake-btn {
+  padding: 16px 28px;
+  background: #df4a4a;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform .2s ease, box-shadow .2s ease, filter .2s ease;
+  box-shadow: 0 10px 24px rgba(223, 74, 74, 0.25);
+}
+.shake-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px rgba(223, 74, 74, 0.35);
+  filter: brightness(1.05);
+}
+.shake-btn:focus-visible {
+  outline: 2px solid #df4a4a;
+  outline-offset: 3px;
+}
+
 @media (max-width: 768px) {
   .main-content {
     padding: 20px 16px;
@@ -547,15 +620,11 @@ export default {
     font-size: 16px;
   }
 }
-
-/* 新增入口卡片样式 */
-.feature-card { margin-top: 24px; padding: 16px; border-radius: 12px; background: #ffffff; box-shadow: 0 8px 24px rgba(0,0,0,0.06); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.feature-title { font-size: 20px; color: #2c3e50; margin-bottom: 4px; }
-.feature-desc { color: #5a6c7d; }
 .feature-btn { padding: 10px 16px; background: #357abd; color: #fff; border: none; border-radius: 8px; cursor: pointer; }
 .feature-btn:hover { background: #2d679e; }
 
 @media (max-width: 768px) {
   .feature-card { flex-direction: column; align-items: flex-start; }
 }
+
 </style>
