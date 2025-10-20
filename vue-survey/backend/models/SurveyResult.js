@@ -95,8 +95,8 @@ class SurveyResult {
     try {
       console.log('🔍 根据手机号查询问卷结果:', { phone, limit });
       
-      // 确保limit是整数
-      const limitInt = parseInt(limit, 10);
+      // 确保limit为安全整数并限制最大返回条数，避免滥用导致内存压力
+      const limitInt = Math.max(1, Math.min(100, parseInt(limit, 10) || 10));
       
       const sql = `
         SELECT * FROM survey_results 

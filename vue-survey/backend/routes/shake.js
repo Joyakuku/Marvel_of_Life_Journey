@@ -74,9 +74,28 @@ function getBaseUrl(req) {
   }
 }
 
-router.post('/upload/image', upload.single('file'), (req, res) => {
+router.post('/upload/image', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: '未接收到文件' })
+
+    // 使用文件魔数校验真实类型，避免伪造MIME导致的脚本上传
+    try {
+      // 以ESM动态导入方式加载 file-type，兼容PM2/Node的CJS环境
+      const ft = await import('file-type')
+      const detected = await ft.fileTypeFromFile(req.file.path)
+      if (!detected || !String(detected.mime || '').startsWith('image/')) {
+        // 非图片：删除已保存文件并拒绝请求
+        try { await fs.promises.unlink(req.file.path) } catch (_) {}
+        logger.warn('[Upload] 非图片文件被拒绝', { file: req.file.filename, mime: detected?.mime || null })
+        return res.status(400).json({ success: false, message: '只允许上传图片文件' })
+      }
+    } catch (err) {
+      // 检测失败：尽量删除文件并返回错误
+      try { await fs.promises.unlink(req.file.path) } catch (_) {}
+      logger.error('[Upload] 文件类型检测失败', { error: err.message })
+      return res.status(400).json({ success: false, message: '文件类型检测失败' })
+    }
+
     const rel = `/uploads/blessings/${req.file.filename}`
     const base = getBaseUrl(req)
     const abs = new URL(rel, base).toString()
@@ -508,7 +527,31 @@ router.post('/progress/:phone/shake', async (req, res) => {
 function requireAdminToken(req, res, next) {
   try {
     const token = req.headers['x-admin-token']
+    const expectedHash = String(process.env.ADMIN_TOKEN_HASH || '').trim()
     const expected = String(process.env.ADMIN_TOKEN || '').trim()
+
+    // 优先使用哈希令牌校验，其次回退到明文令牌
+    if (expectedHash) {
+      if (!token) {
+        logger.warn('管理员令牌缺失')
+        return res.status(403).json({ success:false, message:'管理员令牌错误' })
+      }
+      bcrypt.compare(String(token), expectedHash)
+        .then(ok => {
+          if (!ok) {
+            logger.warn('管理员令牌哈希校验失败')
+            return res.status(403).json({ success:false, message:'管理员令牌错误' })
+          }
+          return next()
+        })
+        .catch(e => {
+          logger.error('管理员令牌哈希校验异常', { error: e.message })
+          return res.status(500).json({ success:false, message:'服务器内部错误' })
+        })
+      return
+    }
+
+    // 回退：使用明文令牌（建议生产配置ADMIN_TOKEN_HASH）
     if (!expected) {
       logger.warn('未配置ADMIN_TOKEN，拒绝管理员接口访问')
       return res.status(403).json({ success:false, message:'管理员令牌未配置' })

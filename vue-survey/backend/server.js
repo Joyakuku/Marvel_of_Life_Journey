@@ -6,6 +6,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const helmet = require('helmet');
 // 配置dotenv从项目根目录加载.env文件
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
@@ -14,6 +15,7 @@ const surveyRoutes = require('./routes/survey');
 // 新增：摇一摇路由（不影响原有survey功能）
 const shakeRoutes = require('./routes/shake');
 const { testConnection } = require('./config/database');
+const { commonLimiter, strictLimiter, uploadLimiter, aiLimiter } = require('./middleware/rateLimit');
 const { initDatabase, checkConnection } = require('./utils/initDatabase');
 
 // 创建Express应用
@@ -50,6 +52,17 @@ app.use(cors({
   maxAge: 600 // 预检结果缓存10分钟
 }))
 
+// 安全响应头（Helmet）
+// 允许跨域资源加载（如前端从不同源访问 /uploads/* 图片）
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  crossOriginEmbedderPolicy: false
+}));
+if (String(process.env.NODE_ENV).toLowerCase() === 'production') {
+  // 仅生产环境启用HSTS，避免本地开发影响
+  app.use(helmet.hsts({ maxAge: 15552000 })); // 180天
+}
+
 // 解析JSON请求体
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -63,20 +76,39 @@ app.use((req, res, next) => {
   next();
 });
 
-// 请求日志中间件
+// 请求日志中间件（脱敏敏感字段，避免泄露密码/令牌）
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] ${req.method} ${req.url}`);
-  
-  // 记录请求体（排除敏感信息）
-  if (req.method !== 'GET' && req.body) {
-    const logBody = { ...req.body };
-    if (logBody.phone) {
-      logBody.phone = logBody.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2');
-    }
-    console.log('📝 请求数据:', logBody);
+
+  // 跳过GET与multipart/form-data体日志，防止日志膨胀与文件内容泄露
+  const contentType = String(req.headers['content-type'] || '').toLowerCase();
+  const isMultipart = contentType.startsWith('multipart/form-data');
+
+  if (req.method !== 'GET' && !isMultipart && req.body) {
+    const SENSITIVE_KEYS = new Set([
+      'password', 'oldpassword', 'token', 'authorization', 'x-admin-token', 'admintoken'
+    ]);
+    const sanitizeBody = (body = {}) => {
+      const out = {};
+      for (const [key, val] of Object.entries(body)) {
+        const k = String(key);
+        const kl = k.toLowerCase();
+        if (kl === 'phone' && typeof val === 'string') {
+          out[k] = val.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2');
+        } else if (SENSITIVE_KEYS.has(kl)) {
+          out[k] = '[REDACTED]';
+        } else {
+          out[k] = val;
+        }
+      }
+      return out;
+    };
+
+    const logBody = sanitizeBody(req.body);
+    console.log('📝 请求数据(已脱敏):', logBody);
   }
-  
+
   next();
 });
 
@@ -119,6 +151,14 @@ app.get('/health', async (req, res) => {
 });
 
 // API路由
+// 在挂载具体路由前应用限流器
+app.use('/api', commonLimiter);
+app.use('/api/survey/submit', strictLimiter);
+app.use('/api/survey/ai-analysis', aiLimiter);
+app.use('/api/shake/upload/image', uploadLimiter);
+app.use('/api/shake/blessing', strictLimiter);
+app.use('/api/shake/password', strictLimiter);
+app.use('/api/shake/admin', strictLimiter);
 app.use('/api/survey', surveyRoutes);
 // 新增：挂载摇一摇模块API（路径前缀与survey保持一致为 /api/*）
 app.use('/api/shake', shakeRoutes);

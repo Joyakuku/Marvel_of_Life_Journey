@@ -13,6 +13,10 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     }
   },
+  // 移除所有 console 与 debugger（开发与构建阶段均生效）
+  esbuild: {
+    drop: ['console', 'debugger']
+  },
   server: {
     port: 3000,
     open: true,
