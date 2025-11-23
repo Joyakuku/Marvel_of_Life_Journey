@@ -99,6 +99,12 @@
       <!-- 已移除页脚页角入口，改为上方美观按钮 -->
       
     </main>
+    <!--
+    <footer class="record-footer">
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">ICP备案号：您的备案号</a>
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">公安备案号：粤B2-20****59</a>
+    </footer>
+    -->
   </div>
 </template>
 
@@ -371,6 +377,8 @@ export default {
 /* 其余样式保持不变 */
 .home-container {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .main-content {
@@ -626,5 +634,10 @@ export default {
 @media (max-width: 768px) {
   .feature-card { flex-direction: column; align-items: flex-start; }
 }
+
+.record-footer { margin-top: auto; padding: 12px 16px; text-align: center; color: #8fa9c8; font-size: 14px; border-top: 1px solid #e9ecef; }
+.record-footer a { color: #8fa9c8; text-decoration: none; margin: 0 8px; }
+.record-footer a:hover { color: #4a90e2; text-decoration: underline; }
+@media (max-width: 768px) { .record-footer { font-size: 12px; padding: 10px 12px; } }
 
 </style>

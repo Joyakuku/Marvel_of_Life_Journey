@@ -240,9 +240,9 @@ export default {
     let audioCtx = null
     // 全新：统一摇一摇模块
     const shake = useShake({
-      orientThreshold: 32,
-      motionThreshold: 10,
-      cooldownMs: 1200,
+      orientThreshold: 48,
+      motionThreshold: 14,
+      cooldownMs: 1500,
       orientSampleMs: 80,
       motionSampleMs: 200,
       onShake: () => {
@@ -435,9 +435,9 @@ export default {
         if (file.size > 5 * 1024 * 1024) { alert('图片大小不能超过5MB'); return }
         imageUploading.value = true
         const res = await shakeAPI.uploadImage(file)
-        const url = res?.data?.absolute || res?.data?.url
+        const url = res?.data?.url || res?.data?.absolute
         if (!url) { throw new Error('上传失败，未返回图片URL') }
-        form.image = url
+        form.image = resolveFileUrl(url)
         console.log('[Upload] 图片已上传，URL=', url)
       } catch (err) {
         console.warn('图片上传失败:', err?.message || err)
@@ -618,19 +618,41 @@ export default {
       }
       // 请求权限并开始录音
       try {
+        console.info('[Record] 请求麦克风')
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        mediaRecorder = new MediaRecorder(stream)
+        let recType = null
+        try {
+          if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported) {
+            if (MediaRecorder.isTypeSupported('audio/webm')) recType = 'audio/webm'
+            else if (MediaRecorder.isTypeSupported('audio/ogg')) recType = 'audio/ogg'
+          }
+        } catch (_) {}
+        mediaRecorder = recType ? new MediaRecorder(stream, { mimeType: recType }) : new MediaRecorder(stream)
+        console.info('[Record] 开始录音', { recType })
         chunks = []
-        mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
-        mediaRecorder.onstop = () => {
-          const blob = new Blob(chunks, { type: 'audio/webm' })
-          form.audioUrl = URL.createObjectURL(blob)
-          console.log('[Record] 完成，大小', blob.size)
+        mediaRecorder.ondataavailable = (e) => { try { console.info('[Record] 收到片段', { size: e?.data?.size || 0, type: e?.data?.type || '' }) } catch (_) {} ; if (e.data.size > 0) chunks.push(e.data) }
+        mediaRecorder.onstop = async () => {
+          const blobType = (chunks[0] && chunks[0].type) ? chunks[0].type : 'audio/webm'
+          const blob = new Blob(chunks, { type: blobType })
+          try { console.info('[Record] 停止', { chunks: chunks.length, blobSize: blob.size, blobType }) } catch (_) {}
+          try {
+            const resp = await shakeAPI.uploadAudio(blob, 'record.webm')
+            const url = resp?.data?.url || resp?.data?.absolute
+            if (url) {
+              form.audioUrl = resolveFileUrl(url)
+              console.info('[Record] 上传完成', { size: blob.size, url })
+            } else {
+              throw new Error('未返回音频URL')
+            }
+          } catch (e) {
+            console.error('[Record] 上传失败', { message: e?.message || String(e) })
+            alert('语音上传失败，请重试')
+          }
         }
         mediaRecorder.start()
         recording.value = true
       } catch (e) {
-        console.warn('无法录音，已降级为仅文本', e)
+        console.error('[Record] 启动失败', { message: e?.message || String(e) })
         alert('设备不支持或未授权麦克风，无法录音')
       }
     }
@@ -775,6 +797,12 @@ export default {
       try { if (phone.value) refreshCloudProgress() } catch (_) {}
       // 环境无需权限（安卓等）可直接开始；iOS 需在用户交互时 ensureAccess
       try { shake.start() } catch (e) {}
+      try {
+        const onceOptions = { once: true }
+        const grant = () => { try { shake.ensureAccess() } catch (_) {} }
+        document.addEventListener('pointerdown', grant, onceOptions)
+        document.addEventListener('touchstart', grant, onceOptions)
+      } catch (_) {}
     })
     onUnmounted(() => {
       try { shake.stop() } catch (e) {}

@@ -23,6 +23,8 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 // 新增：是否启用无数据库模式（保持向后兼容，不改变默认行为）
 const DISABLE_DB = String(process.env.DISABLE_DB || 'false').toLowerCase() === 'true'
+// 识别反向代理的 HTTPS 头部
+app.set('trust proxy', 1)
 
 /**
  * 中间件配置
@@ -121,7 +123,15 @@ try {
   const uploadBase = path.join(__dirname, 'uploads');
   const blessingsDir = path.join(uploadBase, 'blessings');
   fs.mkdirSync(blessingsDir, { recursive: true });
-  app.use('/uploads', express.static(uploadBase));
+  app.use('/uploads', express.static(uploadBase, {
+    etag: true,
+    lastModified: true,
+    cacheControl: true,
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
+    }
+  }));
   console.log(`📁 静态上传目录已就绪: ${uploadBase}`);
 } catch (e) {
   console.warn('⚠️ 初始化上传目录失败:', e.message);
@@ -152,13 +162,24 @@ app.get('/health', async (req, res) => {
 
 // API路由
 // 在挂载具体路由前应用限流器
-app.use('/api', commonLimiter);
+app.use('/api', (req, res, next) => {
+  const p = req.path || ''
+  if (p.startsWith('/shake/blessing/random')) return next()
+  return commonLimiter(req, res, next)
+});
 app.use('/api/survey/submit', strictLimiter);
 app.use('/api/survey/ai-analysis', aiLimiter);
 app.use('/api/shake/upload/image', uploadLimiter);
-app.use('/api/shake/blessing', strictLimiter);
+app.use('/api/shake/upload/audio', uploadLimiter);
+app.use('/api/shake/blessing', (req, res, next) => {
+  const m = String(req.method || '').toUpperCase()
+  const p = req.path || ''
+  if (m === 'POST') return strictLimiter(req, res, next)
+  if (p.endsWith('/like') || p.endsWith('/medal')) return strictLimiter(req, res, next)
+  return next()
+});
 app.use('/api/shake/password', strictLimiter);
-app.use('/api/shake/admin', strictLimiter);
+app.use('/api/shake/admin', require('./middleware/rateLimit').adminLimiter);
 app.use('/api/survey', surveyRoutes);
 // 新增：挂载摇一摇模块API（路径前缀与survey保持一致为 /api/*）
 app.use('/api/shake', shakeRoutes);

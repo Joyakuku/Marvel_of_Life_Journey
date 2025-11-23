@@ -298,6 +298,21 @@ export const shakeAPI = {
       body: fd
     })
   },
+  /** 上传语音音频（multipart） */
+  async uploadAudio(fileOrBlob, filename = 'record.webm') {
+    const fd = new FormData()
+    if (fileOrBlob && typeof fileOrBlob === 'object') {
+      try {
+        fd.append('file', fileOrBlob, filename)
+      } catch (_) {
+        fd.append('file', fileOrBlob)
+      }
+    }
+    return await request('/api/shake/upload/audio', {
+      method: 'POST',
+      body: fd
+    })
+  },
   /** 随机获取祝福 */
   async randomBlessing(tag) {
     const q = tag ? `?tag=${encodeURIComponent(tag)}` : ''
@@ -443,27 +458,44 @@ export function resolveFileUrl(url) {
   try {
     if (!url) return ''
     const isAbsolute = /^https?:\/\//i.test(url)
+    const isData = /^data:/i.test(url)
+    const isBlob = /^blob:/i.test(url)
+    if (isData) return url
+    if (isBlob) return ''
     const dev = import.meta.env.DEV
     const devBase = import.meta.env.VITE_PROXY_TARGET || ''
     const prodBase = import.meta.env.VITE_API_BASE_URL || ''
     const baseStr = dev ? devBase : prodBase
+    const origin = baseStr || (typeof window !== 'undefined' ? window.location.origin : '')
 
     if (isAbsolute) {
       const u = new URL(url)
-      const b = baseStr ? new URL(baseStr) : null
+      const b = baseStr ? new URL(baseStr) : (origin ? new URL(origin) : null)
       const isLocalHost = (h) => h === 'localhost' || h === '127.0.0.1'
       if (b) {
-        // 仅在原始为本地地址时重写为基址，避免把远端图片误指到本地
         if (isLocalHost(u.hostname)) {
           u.protocol = b.protocol
           u.host = b.host
           return u.toString()
         }
-        // 若缺少端口且与基址同域，则补齐端口
         if (!u.port && u.hostname === b.hostname) {
           u.protocol = b.protocol
           u.host = b.host
           return u.toString()
+        }
+      }
+      const needUpgrade = (typeof window !== 'undefined' && window.location.protocol === 'https:' && u.protocol === 'http:')
+      if (needUpgrade) {
+        if (u.pathname.startsWith('/uploads/')) {
+          if (origin) {
+            return new URL(u.pathname + u.search, origin).toString()
+          }
+          if (baseStr) {
+            return new URL(u.pathname + u.search, baseStr).toString()
+          }
+        }
+        if (b) {
+          return new URL(u.pathname + u.search, b.origin || baseStr).toString()
         }
       }
       return u.toString()

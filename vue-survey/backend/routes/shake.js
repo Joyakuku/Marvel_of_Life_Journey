@@ -107,6 +107,75 @@ router.post('/upload/image', upload.single('file'), async (req, res) => {
   }
 })
 
+// 音频上传（语音祝福）
+const audioUploadBase = path.join(__dirname, '..', 'uploads', 'blessings', 'audio')
+fs.mkdirSync(audioUploadBase, { recursive: true })
+const audioStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, audioUploadBase),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '') || '.webm'
+    const name = `${Date.now()}_${Math.random().toString(16).slice(2)}${ext}`
+    cb(null, name)
+  }
+})
+const uploadAudio = multer({
+  storage: audioStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    try {
+      const mt = String(file.mimetype || '')
+      const ok = mt.startsWith('audio/') || mt.startsWith('video/') || mt === 'application/octet-stream'
+      if (ok) {
+        try { logger.info('[UploadAudio] fileFilter accept', { mimetype: mt, originalname: file.originalname }) } catch (_) {}
+        return cb(null, true)
+      }
+      try { logger.warn('[UploadAudio] fileFilter reject', { mimetype: mt, originalname: file.originalname }) } catch (_) {}
+      return cb(new Error('只允许上传音频文件'))
+    } catch (_) {
+      return cb(new Error('只允许上传音频文件'))
+    }
+  }
+})
+
+router.post('/upload/audio', uploadAudio.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: '未接收到文件' })
+
+    try {
+      const { fileTypeFromFile } = await import('file-type')
+      const detected = await fileTypeFromFile(req.file.path)
+      const mt = String(detected?.mime || '')
+      const ext = path.extname(req.file.filename || '').toLowerCase()
+      const fallbackOk = ['.webm', '.ogg', '.mp3', '.wav', '.m4a'].includes(ext) || (req.file.mimetype || '').startsWith('audio/') || (req.file.mimetype || '').startsWith('video/')
+      const ok = mt.startsWith('audio/') || mt === 'video/webm' || fallbackOk
+      try { logger.info('[UploadAudio] detected', { mime: mt, ext, fallbackOk, file: req.file.filename }) } catch (_) {}
+      if (!ok) {
+        try { await fs.promises.unlink(req.file.path) } catch (_) {}
+        logger.warn('[UploadAudio] rejected by detection', { mime: mt, ext, mimetype: req.file.mimetype })
+        return res.status(400).json({ success: false, message: '只允许上传音频文件' })
+      }
+    } catch (err) {
+      const ext = path.extname(req.file.filename || '').toLowerCase()
+      const mt = String(req.file.mimetype || '')
+      const fallbackOk = ['.webm', '.ogg', '.mp3', '.wav', '.m4a'].includes(ext) || mt.startsWith('audio/') || mt.startsWith('video/')
+      try { logger.error('[UploadAudio] type detect error', { error: err.message, mimetype: mt, ext, fallbackOk }) } catch (_) {}
+      if (!fallbackOk) {
+        try { await fs.promises.unlink(req.file.path) } catch (_) {}
+        return res.status(400).json({ success: false, message: '文件类型检测失败' })
+      }
+    }
+
+    const rel = `/uploads/blessings/audio/${req.file.filename}`
+    const base = getBaseUrl(req)
+    const abs = new URL(rel, base).toString()
+    logger.info('[Upload] 音频上传成功', { base, abs, file: req.file.filename })
+    return res.json({ success: true, data: { url: rel, absolute: abs } })
+  } catch (e) {
+    logger.error('音频上传失败', { error: e.message })
+    res.status(500).json({ success: false, message: '服务器内部错误' })
+  }
+})
+
 // 校验手机号格式
 function validPhone(phone) {
   return /^1[3-9]\d{9}$/.test(phone)

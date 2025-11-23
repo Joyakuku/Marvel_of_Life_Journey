@@ -36,9 +36,19 @@ const aiLimiter = rateLimit({
   message: { success: false, message: '分析请求过于频繁，请稍后再试' }
 })
 
+// 管理员审核限流：更宽松，支持较高频次列表/搜索/审核操作
+const adminLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '操作过于频繁，请稍后再试' }
+})
+
 module.exports = {
   commonLimiter,
   strictLimiter,
   uploadLimiter,
-  aiLimiter
+  aiLimiter,
+  adminLimiter
 }
